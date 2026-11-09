@@ -30,6 +30,8 @@ const curta = (iso) => dataBR(iso).slice(0, 5);
 const MESES = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
 const SEMANA = ['domingo', 'segunda-feira', 'terça-feira', 'quarta-feira', 'quinta-feira', 'sexta-feira', 'sábado'];
 const nomeMes = (ym) => `${MESES[+ym.slice(5, 7) - 1]} ${ym.slice(0, 4)}`;
+// botões ‹ › de mês com o nome do mês de destino (o leitor de tela diz "Mês anterior: Agosto 2026")
+const botoesMes = (acao, ym) => `<button data-acao="${acao}" data-delta="-1" aria-label="Mês anterior: ${nomeMes(addMeses(ym + '-01', -1).slice(0, 7))}"><span aria-hidden="true">‹</span></button><span aria-live="off">${nomeMes(ym)}</span><button data-acao="${acao}" data-delta="1" aria-label="Próximo mês: ${nomeMes(addMeses(ym + '-01', 1).slice(0, 7))}"><span aria-hidden="true">›</span></button>`;
 const diaSemana = (iso) => SEMANA[new Date(iso + 'T12:00:00').getDay()];
 const mesDe = (iso) => iso.slice(0, 7);
 const ROTULO = { vencida: 'Vencida', hoje: 'Vence hoje', avencer: 'A vencer', agendada: 'Agendada', paga: 'Paga', prevista: 'Prevista', recebida: 'Recebida' };
@@ -63,11 +65,68 @@ const ui = {
   rel: { mes: mesDe(HOJE), cat: '', modo: 'semana', todos: false }, rascunhoConfig: null, erros: {},
 };
 let timerToast;
-function toast(texto, desfazer) {
+const tempoToast = () => (ui.toast?.desfazer ? 10000 : 6000);
+function iniciarTimerToast() {
   clearTimeout(timerToast);
-  ui.toast = { texto, desfazer };
-  timerToast = setTimeout(() => { ui.toast = null; $('.toast')?.remove(); }, 6000); // sem render: não apaga o que estiver sendo digitado
+  timerToast = setTimeout(() => { ui.toast = null; $('.toast')?.remove(); }, tempoToast()); // sem render: não apaga o que estiver sendo digitado
 }
+function toast(texto, desfazer) {
+  ui.toast = { texto, desfazer };
+  anunciar(texto);
+  iniciarTimerToast();
+}
+
+// ---------------------------------------------------------------- acessibilidade
+let timerAnuncio;
+function anunciar(texto) {
+  const regiao = $('#avisos');
+  if (!regiao) return;
+  clearTimeout(timerAnuncio);
+  regiao.textContent = '';
+  timerAnuncio = setTimeout(() => { regiao.textContent = texto; }, 60);
+}
+
+const CHAVE_PREF = 'coracao-preferencias';
+function lerPreferencias() {
+  try { return { fonte: 'normal', contraste: false, ...JSON.parse(localStorage.getItem(CHAVE_PREF)) }; } catch { return { fonte: 'normal', contraste: false }; }
+}
+let pref = lerPreferencias();
+function aplicarPreferencias() {
+  const html = document.documentElement;
+  if (pref.fonte === 'normal') delete html.dataset.fonte; else html.dataset.fonte = pref.fonte;
+  if (pref.contraste) html.dataset.contraste = 'alto'; else delete html.dataset.contraste;
+}
+function salvarPreferencias() {
+  try { localStorage.setItem(CHAVE_PREF, JSON.stringify(pref)); } catch { /* sem storage: vale só nesta aba */ }
+  aplicarPreferencias();
+}
+aplicarPreferencias();
+
+const ATRS_FOCO = ['acao', 'id', 'estado', 'tipo', 'campo', 'delta', 'dia', 'modo', 'hash', 'i', 'grupo', 'chave', 'fonte'];
+function chaveFoco(el) {
+  if (!el || el === document.body || el === document.documentElement) return null;
+  if (el.id) return '#' + CSS.escape(el.id);
+  if (!el.dataset?.acao) return null;
+  return ATRS_FOCO.filter((k) => el.dataset[k] != null).map((k) => `[data-${k}="${CSS.escape(el.dataset[k])}"]`).join('');
+}
+const FOCAVEIS = 'a[href], button:not([disabled]), input:not([disabled]):not([type=hidden]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+function focar(seletor) {
+  const el = seletor && document.querySelector(seletor);
+  if (!el) return false;
+  if (!el.matches(FOCAVEIS) && !el.hasAttribute('tabindex')) el.setAttribute('tabindex', '-1'); // títulos recebem foco por script
+  el.focus({ preventScroll: el.matches('main h1') });
+  return document.activeElement === el;
+}
+function ligarErros(raiz) {
+  raiz.querySelectorAll('.campo.erro').forEach((campo, i) => {
+    const msg = campo.querySelector('.msg-erro');
+    const ctrl = campo.querySelector('input:not([type=hidden]), select, textarea');
+    if (!ctrl) return;
+    ctrl.setAttribute('aria-invalid', 'true');
+    if (msg) { msg.id ||= `erro-${ctrl.id || i}`; ctrl.setAttribute('aria-describedby', msg.id); }
+  });
+}
+const estrela = '<span aria-hidden="true">*</span>';
 
 // ---------------------------------------------------------------- rotas
 function rota() {
@@ -80,12 +139,12 @@ const ir = (hash) => { if (location.hash === hash) render(); else location.hash 
 // ---------------------------------------------------------------- telas
 function telaLogin() {
   const e = ui.erros;
-  return `<div class="login"><form id="form-login" novalidate>
-  <div class="marca"><div class="coracao">♡</div><h1>CorAção em Dia</h1><p class="muted">Suas contas organizadas com mais tranquilidade</p></div>
-  <div class="campo ${e.email ? 'erro' : ''}"><label for="email">E-mail</label><input id="email" name="email" type="email" autocomplete="username" placeholder="seu@email.org" value="${esc(e.emailValor)}">${e.email ? `<span class="msg-erro">${e.email}</span>` : ''}</div>
+  return `<main class="login"><form id="form-login" novalidate aria-labelledby="t-login">
+  <div class="marca"><div class="coracao" aria-hidden="true">♡</div><h1 id="t-login">CorAção em Dia</h1><p class="muted">Suas contas organizadas com mais tranquilidade</p></div>
+  <div class="campo ${e.email ? 'erro' : ''}"><label for="email">E-mail</label><input id="email" name="email" type="email" autocomplete="username" required placeholder="seu@email.org" value="${esc(e.emailValor)}">${e.email ? `<span class="msg-erro">${e.email}</span>` : ''}</div>
   <div class="campo ${e.senha ? 'erro' : ''}"><label for="senha">Senha</label>
-    <div style="position:relative"><input id="senha" name="senha" type="password" autocomplete="current-password">
-    <button type="button" class="link small" data-acao="mostrar-senha" style="position:absolute;right:12px;top:12px">mostrar</button></div>
+    <div style="position:relative"><input id="senha" name="senha" type="password" autocomplete="current-password" required style="padding-right:84px">
+    <button type="button" class="link small" data-acao="mostrar-senha" aria-pressed="false" aria-controls="senha" style="position:absolute;right:6px;top:5px;min-height:32px;padding:0 8px">mostrar<span class="sr-only"> senha</span></button></div>
     ${e.senha ? `<span class="msg-erro">${e.senha}</span>` : ''}</div>
   <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
     <label class="check"><input type="checkbox" name="manter" checked> Manter conectado</label>
@@ -93,7 +152,7 @@ function telaLogin() {
   <button class="btn pri" style="justify-content:center;padding:12px">Entrar</button>
   <p class="small muted" style="text-align:center">O acesso é criado por convite da responsável financeira.</p>
   <p class="dica">Protótipo: entre com <b>helena@exemplo.org</b>, <b>camila@exemplo.org</b> ou <b>sergio@exemplo.org</b> e qualquer senha.</p>
-  </form></div>`;
+  </form></main>`;
 }
 
 function casca(r, conteudo) {
@@ -101,26 +160,28 @@ function casca(r, conteudo) {
   const areas = [['painel', 'Painel'], ['contas', 'Contas'], ['calendario', 'Calendário'], ['relatorios', 'Relatórios'], ['config', 'Configurações']];
   const ativa = { conta: 'contas', nova: 'contas', editar: 'contas' }[r.nome] || r.nome;
   const lemb = lembretesAtivos();
-  const nav = areas.map(([id, nome]) => `<a class="nav ${ativa === id ? 'on' : ''}" href="#/${id}">${icone(id)}${nome}</a>`).join('');
-  const navCel = areas.map(([id, nome]) => `<a class="${ativa === id ? 'on' : ''}" href="#/${id}">${icone(id, 22)}${id === 'config' ? 'Mais' : nome}</a>`).join('');
-  return `<div class="app">
+  const atual = (id) => (ativa === id ? ' aria-current="page"' : '');
+  const nav = areas.map(([id, nome]) => `<a class="nav ${ativa === id ? 'on' : ''}" href="#/${id}"${atual(id)}>${icone(id)}${nome}</a>`).join('');
+  const navCel = areas.map(([id, nome]) => `<a class="${ativa === id ? 'on' : ''}" href="#/${id}"${atual(id)}>${icone(id, 22)}${id === 'config' ? 'Mais' : nome}</a>`).join('');
+  return `<a class="pular" href="#conteudo" data-acao="pular">Pular para o conteúdo</a>
+  <div class="app"${ui.modal ? ' inert' : ''}>
   <header class="topbar">
-    <a class="logo" href="#/painel"><span class="coracao">♡</span><span><b>Cor</b><span class="az">Ação</span> em Dia</span></a>
-    <div class="busca">${icone('busca', 18)}<label class="sr-only" for="busca-global">Buscar</label>
+    <a class="logo" href="#/painel" aria-label="CorAção em Dia, ir para o painel"><span class="coracao" aria-hidden="true">♡</span><span><b>Cor</b><span class="az">Ação</span> em Dia</span></a>
+    <div class="busca" role="search">${icone('busca', 18)}<label class="sr-only" for="busca-global">Buscar contas</label>
       <input id="busca-global" type="search" placeholder="Buscar conta, fornecedor…" value="${esc(ui.lista.q)}"></div>
     <div class="sino" style="position:relative">
-      <button class="icone-btn" data-acao="notif" aria-label="Lembretes (${lemb.length})">${icone('sino', 18)}${lemb.length ? `<span class="badge">${lemb.length}</span>` : ''}</button>
-      ${ui.notif ? `<div class="menu notif"><div style="padding:8px 12px;font-weight:700">Lembretes</div>${lemb.map((c) => `<a class="item" href="#/conta/${c.id}">
+      <button class="icone-btn" data-acao="notif" aria-label="Lembretes: ${lemb.length} ${lemb.length === 1 ? 'conta precisa' : 'contas precisam'} de atenção" aria-expanded="${ui.notif}" aria-controls="painel-lembretes">${icone('sino', 18)}${lemb.length ? `<span class="badge" aria-hidden="true">${lemb.length}</span>` : ''}</button>
+      ${ui.notif ? `<div class="menu notif" id="painel-lembretes" role="region" aria-label="Lembretes"><div style="padding:8px 12px;font-weight:700" aria-hidden="true">Lembretes</div>${lemb.map((c) => `<a class="item" href="#/conta/${c.id}">
         <b>${esc(c.descricao)}</b> · ${fmt(c.valor)}<br><span class="small muted">${estado(c) === 'vencida' ? 'Venceu ' + prazo(c) : 'Vence ' + prazo(c)}</span></a>`).join('') || '<p class="vazio small">Nenhum lembrete agora.</p>'}</div>` : ''}
     </div>
-    <span class="avatar" title="${esc(u.nome)}">${iniciais(u.nome)}</span>
+    <span class="avatar" role="img" aria-label="Sessão de ${esc(u.nome)}" title="${esc(u.nome)}">${iniciais(u.nome)}</span>
   </header>
   <nav class="side" aria-label="Menu principal">${nav}
-    <div class="usuario"><span class="avatar">${iniciais(u.nome)}</span><div><b>${esc(u.nome.split(' ')[0])} ${esc(u.nome.split(' ')[1]?.[0] || '')}.</b><div class="small muted">${u.perfil} · <button data-acao="sair">Sair</button></div></div></div>
+    <div class="usuario"><span class="avatar" aria-hidden="true">${iniciais(u.nome)}</span><div><b>${esc(u.nome.split(' ')[0])} ${esc(u.nome.split(' ')[1]?.[0] || '')}.</b><div class="small muted">${u.perfil} · <button data-acao="sair">Sair</button></div></div></div>
   </nav>
-  <main>${conteudo}</main>
-  ${r.nome !== 'nova' && r.nome !== 'editar' ? '<a class="fab" href="#/nova" aria-label="Nova conta">+</a>' : ''}
-  <nav class="bottom-nav" aria-label="Menu">${navCel}</nav>
+  <main id="conteudo">${conteudo}
+  ${r.nome !== 'nova' && r.nome !== 'editar' ? '<a class="fab" href="#/nova" aria-label="Nova conta"><span aria-hidden="true">+</span></a>' : ''}</main>
+  <nav class="bottom-nav" aria-label="Menu principal (celular)">${navCel}</nav>
   </div>`;
 }
 
@@ -151,11 +212,11 @@ function telaPainel() {
       <span class="muted">${doMes.length} contas · ${pagasMes.length} já pagas</span></button>
   </div>
   <div class="duas">
-    <section class="card tabela"><div class="topo"><div><h2 style="display:inline">Exigem atenção</h2> <span class="small muted">ordenadas por urgência</span></div><a href="#/contas" class="small">Ver todas →</a></div>
-      ${lista.length ? `<table><thead><tr><th>Estado</th><th>Descrição</th><th class="esconde-cel">Vencimento</th><th class="num">Valor</th><th></th></tr></thead><tbody>
-      ${lista.map((c) => `<tr data-ir="#/conta/${c.id}"><td>${tag(c)}</td><td><b>${esc(c.descricao)}</b><div class="small muted so-cel">${curta(c.venc)} · ${prazo(c)}</div></td>
+    <section class="card tabela"><div class="topo"><div><h2 style="display:inline">Exigem atenção</h2> <span class="small muted">ordenadas por urgência</span></div><a href="#/contas" class="small">Ver todas<span class="sr-only"> as contas</span> <span aria-hidden="true">→</span></a></div>
+      ${lista.length ? `<table><caption class="sr-only">Contas que exigem atenção, ordenadas por urgência</caption><thead><tr><th scope="col">Estado</th><th scope="col">Descrição</th><th scope="col" class="esconde-cel">Vencimento</th><th scope="col" class="num">Valor</th><th scope="col"><span class="sr-only">Ação</span></th></tr></thead><tbody>
+      ${lista.map((c) => `<tr data-ir="#/conta/${c.id}"><td>${tag(c)}</td><td><a class="linha-link" href="#/conta/${c.id}">${esc(c.descricao)}</a><div class="small muted so-cel">${curta(c.venc)} · ${prazo(c)}</div></td>
         <td class="esconde-cel">${curta(c.venc)} <span class="muted small">· ${prazo(c)}</span></td><td class="num">${fmt(c.valor)}</td>
-        <td class="num"><button class="btn sm" data-acao="pagar" data-id="${c.id}">Pagar</button></td></tr>`).join('')}</tbody></table>`
+        <td class="num"><button class="btn sm" data-acao="pagar" data-id="${c.id}">Pagar<span class="sr-only"> ${esc(c.descricao)}</span></button></td></tr>`).join('')}</tbody></table>`
       : '<p class="vazio">Nada urgente. Todas as contas dos próximos 7 dias estão pagas ou agendadas.</p>'}
     </section>
     <div class="pilha">
@@ -163,7 +224,7 @@ function telaPainel() {
         <div class="kv"><span>Entradas</span><b class="verde">${fmt(r.entradas)}</b></div>
         <div class="kv"><span>Saídas</span><b class="vermelho">${fmt(r.saidas)}</b></div>
         <div class="kv"><b>Saldo</b><b class="azul" style="font-size:19px">${fmt(r.saldo)}</b></div>
-        <a href="#/relatorios" class="small">Ver relatório →</a></section>
+        <a href="#/relatorios" class="small">Ver relatório <span aria-hidden="true">→</span></a></section>
       <section class="card"><h2 style="margin-bottom:4px">Pagas recentemente</h2><div class="lista-simples">
         ${pagas.map((c) => `<div><a href="#/conta/${c.id}" style="color:inherit;text-decoration:none"><b>${esc(c.descricao)}</b></a><span class="muted small">${curta(c.pagamento.data)} · ${fmt(c.pagamento.valor)}</span></div>`).join('') || '<p class="muted small">Nenhuma ainda.</p>'}
       </div></section>
@@ -173,9 +234,11 @@ function telaPainel() {
 
 function filtrarLista() {
   const f = ui.lista;
-  const q = f.q.trim().toLowerCase();
+  // busca tolerante: ignora acentos e maiúsculas ("agua" encontra "Conta de água")
+  const norm = (t) => t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  const q = norm(f.q.trim());
   const base = db.contas.filter((c) => c.tipo === f.tipo && mesDe(c.venc) === f.mes && (!f.cat || c.categoria === f.cat)
-    && (!q || c.descricao.toLowerCase().includes(q) || c.fornecedor.toLowerCase().includes(q)));
+    && (!q || norm(c.descricao).includes(q) || norm(c.fornecedor).includes(q)));
   const contagem = {};
   base.forEach((c) => { const e = estado(c); contagem[e] = (contagem[e] || 0) + 1; });
   const linhas = f.estado === 'todos' ? base : base.filter((c) => estado(c) === f.estado);
@@ -195,30 +258,30 @@ function telaContas() {
   const abas = f.tipo === 'saida'
     ? [['todos', 'Todas'], ['vencida', 'Vencidas'], ['hoje', 'Vence hoje'], ['avencer', 'A vencer'], ['agendada', 'Agendadas'], ['paga', 'Pagas']]
     : [['todos', 'Todas'], ['prevista', 'Previstas'], ['recebida', 'Recebidas']];
-  const th = (campo, nome, cls = '') => `<th class="${cls}"><button data-acao="ordenar" data-campo="${campo}" class="${f.ordem === campo ? 'on' : ''}">${nome} ${f.ordem === campo ? (f.dir > 0 ? '↓' : '↑') : '↕'}</button></th>`;
+  const th = (campo, nome, cls = '') => `<th scope="col" class="${cls}"${f.ordem === campo ? ` aria-sort="${f.dir > 0 ? 'ascending' : 'descending'}"` : ''}><button data-acao="ordenar" data-campo="${campo}" class="${f.ordem === campo ? 'on' : ''}">${nome} <span aria-hidden="true">${f.ordem === campo ? (f.dir > 0 ? '↓' : '↑') : '↕'}</span><span class="sr-only">, ordenar</span></button></th>`;
   return `
   <div class="cab"><h1 class="titulo">Contas</h1><a class="btn pri novo" href="#/nova${f.tipo === 'entrada' ? '?tipo=entrada' : ''}">+ ${f.tipo === 'entrada' ? 'Nova entrada' : 'Nova conta'}</a></div>
-  <div style="margin-bottom:14px" class="seg" role="group" aria-label="Tipo">
-    <button class="${f.tipo === 'saida' ? 'on' : ''}" data-acao="tipo-lista" data-tipo="saida">A pagar</button>
-    <button class="${f.tipo === 'entrada' ? 'on' : ''}" data-acao="tipo-lista" data-tipo="entrada">A receber</button></div>
-  <div class="abas" role="tablist">${abas.map(([id, nome]) => `<button role="tab" class="${f.estado === id ? 'on' : ''}" data-acao="aba-estado" data-estado="${id}">${nome} (${id === 'todos' ? base.length : contagem[id] || 0})</button>`).join('')}</div>
+  <div style="margin-bottom:14px" class="seg" role="group" aria-label="Tipo de conta">
+    <button class="${f.tipo === 'saida' ? 'on' : ''}" aria-pressed="${f.tipo === 'saida'}" data-acao="tipo-lista" data-tipo="saida">A pagar</button>
+    <button class="${f.tipo === 'entrada' ? 'on' : ''}" aria-pressed="${f.tipo === 'entrada'}" data-acao="tipo-lista" data-tipo="entrada">A receber</button></div>
+  <div class="abas" role="group" aria-label="Filtrar por estado">${abas.map(([id, nome]) => `<button class="${f.estado === id ? 'on' : ''}" aria-pressed="${f.estado === id}" data-acao="aba-estado" data-estado="${id}">${nome} (${id === 'todos' ? base.length : contagem[id] || 0})</button>`).join('')}</div>
   <div class="filtros">
-    <div class="busca-lista"><label class="sr-only" for="busca-lista">Buscar</label><input id="busca-lista" type="search" placeholder="Buscar por descrição ou fornecedor…" value="${esc(f.q)}"></div>
-    <div class="mes-sel"><button data-acao="mes-lista" data-delta="-1" aria-label="Mês anterior">‹</button><span>${nomeMes(f.mes)}</span><button data-acao="mes-lista" data-delta="1" aria-label="Próximo mês">›</button></div>
-    <label class="sr-only" for="cat-lista">Categoria</label>
+    <div class="busca-lista"><label class="sr-only" for="busca-lista">Buscar por descrição ou fornecedor</label><input id="busca-lista" type="search" placeholder="Buscar por descrição ou fornecedor…" value="${esc(f.q)}"></div>
+    <div class="mes-sel">${botoesMes('mes-lista', f.mes)}</div>
+    <label class="sr-only" for="cat-lista">Filtrar por categoria</label>
     <select id="cat-lista" style="width:220px"><option value="">Categoria: todas</option>${categoriasAtivas().map((c) => `<option ${f.cat === c ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select>
   </div>
   <section class="card tabela">
-    ${pagina.length ? `<table><thead><tr>${th('estado', 'Estado')}${th('descricao', 'Descrição')}${th('categoria', 'Categoria', 'esconde-cel')}${th('venc', 'Vencimento', 'esconde-cel')}${th('valor', 'Valor', 'num')}<th class="esconde-cel">Anexo</th><th></th></tr></thead><tbody>
-    ${pagina.map((c) => `<tr data-ir="#/conta/${c.id}"><td>${tag(c)}</td><td><b>${esc(c.descricao)}</b><div class="small muted so-cel">${dataBR(c.venc)}</div></td>
+    ${pagina.length ? `<table><caption class="sr-only">Contas de ${nomeMes(f.mes)}</caption><thead><tr>${th('estado', 'Estado')}${th('descricao', 'Descrição')}${th('categoria', 'Categoria', 'esconde-cel')}${th('venc', 'Vencimento', 'esconde-cel')}${th('valor', 'Valor', 'num')}<th scope="col" class="esconde-cel">Anexo</th><th scope="col"><span class="sr-only">Ações</span></th></tr></thead><tbody>
+    ${pagina.map((c) => `<tr data-ir="#/conta/${c.id}"><td>${tag(c)}</td><td><a class="linha-link" href="#/conta/${c.id}">${esc(c.descricao)}</a><div class="small muted so-cel">${dataBR(c.venc)}</div></td>
       <td class="esconde-cel">${esc(c.categoria)}</td><td class="esconde-cel">${dataBR(c.venc)}</td><td class="num">${fmt(valorPago(c))}</td>
-      <td class="esconde-cel">${c.anexos.length ? '<span class="arq">PDF</span>' : '<span class="muted">—</span>'}</td>
-      <td class="num"><div class="menu-linha"><button data-acao="menu" data-id="${c.id}" aria-label="Ações">⋯</button>${ui.menu === c.id ? menuLinha(c) : ''}</div></td></tr>`).join('')}
+      <td class="esconde-cel">${c.anexos.length ? '<span class="arq">PDF</span>' : '<span class="muted" aria-label="sem anexo">—</span>'}</td>
+      <td class="num"><div class="menu-linha"><button data-acao="menu" data-id="${c.id}" aria-label="Ações de ${esc(c.descricao)}" aria-haspopup="true" aria-expanded="${ui.menu === c.id}"><span aria-hidden="true">⋯</span></button>${ui.menu === c.id ? menuLinha(c) : ''}</div></td></tr>`).join('')}
     </tbody></table>` : `<p class="vazio">Nenhuma conta encontrada com esses filtros.</p>`}
     <div class="topo" style="border-top:1px solid var(--borda)"><div><b>Total filtrado: ${fmt(total)}</b> <span class="muted small">· ${linhas.length} de ${base.length} contas</span></div>
       <div style="display:flex;gap:8px;align-items:center"><span class="small muted">Página ${f.pagina} de ${paginas}</span>
-      <button class="btn sm" data-acao="pagina" data-delta="-1" ${f.pagina <= 1 ? 'disabled' : ''}>‹ Anterior</button>
-      <button class="btn sm" data-acao="pagina" data-delta="1" ${f.pagina >= paginas ? 'disabled' : ''}>Próxima ›</button></div></div>
+      <button class="btn sm" data-acao="pagina" data-delta="-1" ${f.pagina <= 1 ? 'disabled' : ''}><span aria-hidden="true">‹</span> Anterior<span class="sr-only"> página</span></button>
+      <button class="btn sm" data-acao="pagina" data-delta="1" ${f.pagina >= paginas ? 'disabled' : ''}>Próxima<span class="sr-only"> página</span> <span aria-hidden="true">›</span></button></div></div>
   </section>`;
 }
 
@@ -234,12 +297,14 @@ function menuLinha(c) {
 }
 
 function anexoCampo(nome, rotulo, arquivo) {
-  return `<div class="so-pc"><label class="drop">↑<br>Arraste o arquivo para cá ou <u>clique para selecionar</u><br><span class="small">PDF, JPG ou PNG</span>
-    <input type="file" name="${nome}" accept=".pdf,image/*">${arquivo ? `<div class="arquivo">${esc(arquivo)}</div>` : ''}</label></div>
+  const rot = rotulo ? `<span class="sr-only">${esc(rotulo)}: </span>` : '';
+  const escolhido = arquivo ? `<span class="sr-only">. Arquivo escolhido: ${esc(arquivo)}</span>` : '';
+  return `<div class="so-pc"><label class="drop">${rot}<span aria-hidden="true">↑</span><br>Arraste o arquivo para cá ou <u>clique para selecionar</u><br><span class="small">PDF, JPG ou PNG</span>${escolhido}
+    <input type="file" name="${nome}" accept=".pdf,image/*">${arquivo ? `<div class="arquivo" aria-hidden="true">${esc(arquivo)}</div>` : ''}</label></div>
   <div class="so-cel" style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-    <label class="drop"><b>Tirar foto</b><input type="file" name="${nome}-foto" accept="image/*" capture="environment"></label>
-    <label class="drop">Escolher arquivo<input type="file" name="${nome}-cel" accept=".pdf,image/*"></label>
-    ${arquivo ? `<div class="arquivo small" style="grid-column:1/-1">${esc(arquivo)}</div>` : ''}</div>`;
+    <label class="drop">${rot}<b>Tirar foto</b>${escolhido}<input type="file" name="${nome}-foto" accept="image/*" capture="environment"></label>
+    <label class="drop">${rot}Escolher arquivo${escolhido}<input type="file" name="${nome}-cel" accept=".pdf,image/*"></label>
+    ${arquivo ? `<div class="arquivo small" style="grid-column:1/-1" aria-hidden="true">${esc(arquivo)}</div>` : ''}</div>`;
 }
 
 function telaForm(r) {
@@ -251,36 +316,36 @@ function telaForm(r) {
   const tipo = e.valores?.tipo || c.tipo;
   const lemb = e.valores?.lembretes || c.lembretes;
   const fornecedores = [...new Set(db.contas.map((x) => x.fornecedor).filter(Boolean))];
-  const campo = (k, rot, html) => `<div class="campo ${e[k] ? 'erro' : ''}"><label for="f-${k}">${rot}</label>${html}${e[k] ? `<span class="msg-erro">${e[k]}</span>` : ''}</div>`;
+  const campo = (k, rot, html) => `<div class="campo ${e[k] ? 'erro' : ''}"><label for="f-${k}">${rot.replace(' *', ' ' + estrela)}</label>${html}${e[k] ? `<span class="msg-erro">${e[k]}</span>` : ''}</div>`;
   return `
-  <div class="cab"><div><div class="migalha"><a href="#/contas">Contas</a> › ${editando ? 'Editar' : 'Nova conta'}</div><h1 class="titulo">${editando ? 'Editar: ' + esc(c.descricao) : 'Nova conta'}</h1></div></div>
+  <div class="cab"><div><nav class="migalha" aria-label="Você está em"><a href="#/contas">Contas</a> <span aria-hidden="true">›</span> <span aria-current="page">${editando ? 'Editar' : 'Nova conta'}</span></nav><h1 class="titulo">${editando ? 'Editar: ' + esc(c.descricao) : 'Nova conta'}</h1></div></div>
   <form id="form-conta" class="form" novalidate data-id="${editando ? c.id : ''}">
     <input type="hidden" name="tipo" value="${tipo}">
-    <div class="seg" role="group" aria-label="Tipo" style="align-self:flex-start">
-      <button type="button" class="${tipo === 'saida' ? 'on' : ''}" data-acao="tipo-form" data-tipo="saida">Saída (conta a pagar)</button>
-      <button type="button" class="${tipo === 'entrada' ? 'on' : ''}" data-acao="tipo-form" data-tipo="entrada">Entrada</button></div>
+    <div class="seg" role="group" aria-label="Tipo de lançamento" style="align-self:flex-start">
+      <button type="button" class="${tipo === 'saida' ? 'on' : ''}" aria-pressed="${tipo === 'saida'}" data-acao="tipo-form" data-tipo="saida">Saída (conta a pagar)</button>
+      <button type="button" class="${tipo === 'entrada' ? 'on' : ''}" aria-pressed="${tipo === 'entrada'}" data-acao="tipo-form" data-tipo="entrada">Entrada</button></div>
     <div class="duas larga-400">
       <div class="form">
-        ${campo('descricao', 'Descrição *', `<input id="f-descricao" name="descricao" type="text" placeholder="Ex.: Conta de energia" value="${v('descricao')}">`)}
+        ${campo('descricao', 'Descrição *', `<input id="f-descricao" name="descricao" type="text" required autocomplete="off" placeholder="Ex.: Conta de energia" value="${v('descricao')}">`)}
         <div class="linha">
-          ${campo('valor', 'Valor (R$) *', `<input id="f-valor" name="valor" type="text" inputmode="decimal" placeholder="0,00" value="${v('valor')}">`)}
-          ${campo('venc', tipo === 'entrada' ? 'Data prevista *' : 'Vencimento *', `<input id="f-venc" name="venc" type="date" value="${v('venc')}">`)}
+          ${campo('valor', 'Valor (R$) *', `<input id="f-valor" name="valor" type="text" inputmode="decimal" required placeholder="0,00" value="${v('valor')}">`)}
+          ${campo('venc', tipo === 'entrada' ? 'Data prevista *' : 'Vencimento *', `<input id="f-venc" name="venc" type="date" required value="${v('venc')}">`)}
         </div>
         <div class="linha">
           ${campo('categoria', 'Categoria', `<select id="f-categoria" name="categoria"><option value="">Selecione…</option>${categoriasAtivas().map((x) => `<option ${v('categoria') === esc(x) ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select>`)}
           ${campo('fornecedor', tipo === 'entrada' ? 'Origem' : 'Fornecedor', `<input id="f-fornecedor" name="fornecedor" type="text" list="fornecedores" value="${v('fornecedor')}"><datalist id="fornecedores">${fornecedores.map((x) => `<option value="${esc(x)}">`).join('')}</datalist>`)}
         </div>
-        <div class="campo"><span class="rotulo">Repetir</span><div class="opcoes">
+        <fieldset class="campo"><legend class="rotulo">Repetir</legend><div class="opcoes">
           ${[['nao', 'Não repete'], ['mensal', 'Todo mês'], ['semanal', 'Toda semana'], ['anual', 'Todo ano']].map(([id, nome]) => `<label><input type="radio" name="repetir" value="${id}" ${(e.valores?.repetir || c.repetir) === id ? 'checked' : ''}> ${nome}</label>`).join('')}
-        </div></div>
+        </div></fieldset>
         ${campo('obs', 'Observações', `<textarea id="f-obs" name="obs" placeholder="Opcional">${v('obs')}</textarea>`)}
-        <p class="small muted">* campos obrigatórios</p>
+        <p class="small muted"><span aria-hidden="true">*</span> campos obrigatórios</p>
       </div>
       <div class="form">
-        <div class="campo"><span class="rotulo">${tipo === 'entrada' ? 'Comprovante' : 'Boleto ou nota fiscal'}</span>${anexoCampo('anexo', '', e.valores?.anexo || c.anexos[0])}</div>
-        ${tipo === 'saida' ? `<div class="card form" style="gap:10px"><b>Lembretes desta conta</b>
-          ${[[3, '3 dias antes'], [1, '1 dia antes'], [0, 'No dia do vencimento'], [7, '1 semana antes']].map(([d, nome]) => `<label class="check"><input type="checkbox" name="lembretes" value="${d}" ${lemb.map(Number).includes(d) ? 'checked' : ''}> ${nome}</label>`).join('')}</div>` : ''}
-        <div class="previa" id="previa" aria-live="polite"></div>
+        <div class="campo"><span class="rotulo" aria-hidden="true">${tipo === 'entrada' ? 'Comprovante' : 'Boleto ou nota fiscal'}</span>${anexoCampo('anexo', tipo === 'entrada' ? 'Comprovante' : 'Boleto ou nota fiscal', e.valores?.anexo || c.anexos[0])}</div>
+        ${tipo === 'saida' ? `<fieldset class="card form" style="gap:10px"><legend class="sr-only">Lembretes desta conta</legend><b aria-hidden="true">Lembretes desta conta</b>
+          ${[[3, '3 dias antes'], [1, '1 dia antes'], [0, 'No dia do vencimento'], [7, '1 semana antes']].map(([d, nome]) => `<label class="check"><input type="checkbox" name="lembretes" value="${d}" ${lemb.map(Number).includes(d) ? 'checked' : ''}> ${nome}</label>`).join('')}</fieldset>` : ''}
+        <div class="previa" id="previa" aria-live="polite" aria-atomic="true"></div>
       </div>
     </div>
     <div class="acoes"><a class="btn" href="${editando ? '#/conta/' + c.id : '#/contas'}">Cancelar</a><button class="btn pri">${editando ? 'Salvar alterações' : 'Salvar conta'}</button></div>
@@ -301,16 +366,17 @@ function atualizarPrevia() {
   const form = $('#form-conta'); const alvo = $('#previa');
   if (!form || !alvo) return;
   const v = lerForm(form);
-  if (!v.venc) { alvo.innerHTML = '<span class="small muted">Como esta conta vai aparecer</span><span class="small">Preencha o vencimento para ver o estado.</span>'; return; }
+  if (!v.venc) { const vazio = '<span class="small muted">Como esta conta vai aparecer</span><span class="small">Preencha o vencimento para ver o estado.</span>'; if (alvo.dataset.html !== vazio) { alvo.innerHTML = vazio; alvo.dataset.html = vazio; } return; }
   const c = { tipo: v.tipo, venc: v.venc, pagamento: null, agendada: false };
   const e = estado(c);
   const prox = proximasOcorrencias(v.venc, v.repetir);
   const nomes = { 3: '3 dias antes', 1: '1 dia antes', 0: 'no dia', 7: '1 semana antes' };
-  alvo.innerHTML = `<span class="small muted">Como esta conta vai aparecer</span>
+  const html = `<span class="small muted">Como esta conta vai aparecer</span>
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span class="tag ${e}">${ROTULO[e]}</span><b>${e === 'vencida' ? 'venceu ' + prazo(c) : e === 'prevista' ? 'prevista para ' + dataBR(v.venc) : 'vence ' + prazo(c)}</b></div>
     ${v.tipo === 'saida' ? `<span class="small muted">Lembretes: ${v.lembretes.length ? v.lembretes.sort((a, b) => b - a).map((d) => nomes[d]).join(', ') : 'nenhum'}</span>` : ''}
     ${prox.length ? `<span class="small muted">Próximas: ${prox.map(dataBR).join(', ')}</span>` : ''}
     <span class="small muted">O estado é calculado pelo sistema a partir da data.</span>`;
+  if (alvo.dataset.html !== html) { alvo.innerHTML = html; alvo.dataset.html = html; }
 }
 
 function salvarConta(form) {
@@ -320,7 +386,7 @@ function salvarConta(form) {
   const centavos = parseValor(v.valor);
   if (!(centavos > 0)) erros.valor = 'Informe um valor válido, por exemplo 142,30.';
   if (!v.venc) erros.venc = 'Informe a data.';
-  if (Object.keys(erros).length) { ui.erros = { ...erros, valores: v }; render(); return; }
+  if (Object.keys(erros).length) { ui.erros = { ...erros, valores: v }; ui.focar = '[aria-invalid="true"]'; anunciar(`Não foi possível salvar: ${Object.values(erros).join(' ')}`); render(); return; }
   ui.erros = {};
   const quem = primeiroNome();
   const id = form.dataset.id;
@@ -346,7 +412,7 @@ function salvarConta(form) {
 }
 
 function naoEncontrada() {
-  return '<div class="card vazio"><h2>Conta não encontrada</h2><p>Ela pode ter sido excluída.</p><p style="margin-top:12px"><a class="btn" href="#/contas">Voltar para Contas</a></p></div>';
+  return '<div class="card vazio"><h1 class="titulo">Conta não encontrada</h1><p>Ela pode ter sido excluída.</p><p style="margin-top:12px"><a class="btn" href="#/contas">Voltar para Contas</a></p></div>';
 }
 
 function telaDetalhe(r) {
@@ -355,7 +421,7 @@ function telaDetalhe(r) {
   const e = estado(c);
   const entrada = c.tipo === 'entrada';
   return `
-  <div class="cab"><div><div class="migalha"><a href="#/contas">Contas</a> › ${esc(c.descricao)}</div>
+  <div class="cab"><div><nav class="migalha" aria-label="Você está em"><a href="#/contas">Contas</a> <span aria-hidden="true">›</span> <span aria-current="page">${esc(c.descricao)}</span></nav>
     <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap"><h1 class="titulo">${esc(c.descricao)}</h1>${tag(c)}
     ${c.pagamento ? '' : `<span class="muted">${e === 'vencida' ? 'venceu ' + prazo(c) : (entrada ? 'prevista ' : 'vence ') + prazo(c)}</span>`}</div></div></div>
   <div class="duas larga-440">
@@ -367,14 +433,14 @@ function telaDetalhe(r) {
       <div class="kv"><span class="muted">${entrada ? 'Origem' : 'Fornecedor'}</span><span>${esc(c.fornecedor) || '—'}</span></div>
       <div class="kv"><span class="muted">Repetição</span><span>${{ nao: 'Não repete', mensal: 'Todo mês', semanal: 'Toda semana', anual: 'Todo ano' }[c.repetir]}</span></div>
       <div class="kv"><span class="muted">Observações</span><span>${esc(c.obs) || '—'}</span></div>
-      <div style="display:flex;gap:20px;margin-top:14px"><a href="#/editar/${c.id}">Editar</a><button class="link" style="color:var(--vencida)" data-acao="excluir" data-id="${c.id}">Excluir conta</button></div>
+      <div style="display:flex;gap:20px;margin-top:14px"><a href="#/editar/${c.id}">Editar<span class="sr-only"> conta</span></a><button class="link" style="color:var(--vencida)" data-acao="excluir" data-id="${c.id}">Excluir conta</button></div>
     </section>
     <div class="pilha">
       <section class="card"><h2 style="margin-bottom:10px">Anexos</h2>
-        ${c.anexos.map((a) => `<div class="kv"><span><span class="arq">${a.toLowerCase().endsWith('.pdf') ? 'PDF' : 'IMG'}</span> ${esc(a)}</span><button class="link small" data-acao="abrir-anexo" data-nome="${esc(a)}">Abrir</button></div>`).join('') || '<p class="small muted">Nenhum anexo.</p>'}
-        <label class="btn sm" style="margin-top:10px">+ Adicionar anexo<input type="file" id="add-anexo" data-id="${c.id}" accept=".pdf,image/*" hidden></label></section>
+        ${c.anexos.map((a) => `<div class="kv"><span><span class="arq">${a.toLowerCase().endsWith('.pdf') ? 'PDF' : 'IMG'}</span> ${esc(a)}</span><button class="link small" data-acao="abrir-anexo" data-nome="${esc(a)}">Abrir<span class="sr-only"> ${esc(a)}</span></button></div>`).join('') || '<p class="small muted">Nenhum anexo.</p>'}
+        <label class="btn sm" style="margin-top:10px;position:relative">+ Adicionar anexo<input type="file" id="add-anexo" data-id="${c.id}" accept=".pdf,image/*"></label></section>
       <section class="card"><h2 style="margin-bottom:6px">Histórico</h2><div class="historico">
-        ${[...c.historico].reverse().map((h) => `<div><span class="quando">${curta(h.quando)} ${h.quando.slice(11, 16)}</span><span>${esc(h.texto)}</span></div>`).join('')}</div></section>
+        ${[...c.historico].reverse().map((h) => `<div><time class="quando" datetime="${h.quando}">${curta(h.quando)} ${h.quando.slice(11, 16)}</time><span>${esc(h.texto)}</span></div>`).join('')}</div></section>
     </div>
   </div>
   <div class="acoes" style="margin-top:20px;border-top:1px solid var(--borda);padding-top:20px">
@@ -389,24 +455,24 @@ function modalPagamento() {
   if (!c) return '';
   const m = ui.modal;
   const entrada = c.tipo === 'entrada';
-  return `<div class="modal-fundo" data-acao="fechar-modal"><form class="modal" id="form-pagamento" role="dialog" aria-modal="true" aria-labelledby="t-pag" novalidate>
-    <div class="cab"><h2 id="t-pag" style="font-size:21px;color:var(--azul)">${entrada ? 'Registrar recebimento' : 'Registrar pagamento'}</h2><button type="button" class="fechar" data-acao="fechar-modal" aria-label="Fechar">×</button></div>
-    <div class="resumo-conta"><span>${esc(c.descricao)} · ${entrada ? 'prev.' : 'venc.'} ${dataBR(c.venc)}</span><b>${fmt(c.valor)}</b></div>
+  return `<div class="modal-fundo" data-acao="fechar-modal"><div class="modal-dialogo" role="dialog" aria-modal="true" aria-labelledby="t-pag" aria-describedby="d-pag"><form class="modal" id="form-pagamento" novalidate>
+    <div class="cab"><h2 id="t-pag" style="font-size:21px;color:var(--azul)">${entrada ? 'Registrar recebimento' : 'Registrar pagamento'}</h2><button type="button" class="fechar" data-acao="fechar-modal" aria-label="Fechar janela"><span aria-hidden="true">×</span></button></div>
+    <div class="resumo-conta" id="d-pag"><span>${esc(c.descricao)} · ${entrada ? 'prev.' : 'venc.'} ${dataBR(c.venc)}</span><b>${fmt(c.valor)}</b></div>
     <div class="linha">
-      <div class="campo"><label for="p-data">Data ${entrada ? 'do recebimento' : 'do pagamento'} *</label><input id="p-data" name="data" type="date" value="${m.data || HOJE}"></div>
-      <div class="campo ${m.erroValor ? 'erro' : ''}"><label for="p-valor">Valor ${entrada ? 'recebido' : 'pago'} *</label><input id="p-valor" name="valor" type="text" inputmode="decimal" value="${esc(m.valor ?? (c.valor / 100).toLocaleString('pt-BR', { minimumFractionDigits: 2 }))}" ${m.multa ? '' : 'readonly'}>${m.erroValor ? '<span class="msg-erro">Valor inválido.</span>' : ''}</div>
+      <div class="campo"><label for="p-data">Data ${entrada ? 'do recebimento' : 'do pagamento'} ${estrela}</label><input id="p-data" name="data" type="date" required value="${m.data || HOJE}"></div>
+      <div class="campo ${m.erroValor ? 'erro' : ''}"><label for="p-valor">Valor ${entrada ? 'recebido' : 'pago'} ${estrela}</label><input id="p-valor" name="valor" type="text" inputmode="decimal" required ${m.multa ? '' : 'aria-describedby="dica-valor"'} value="${esc(m.valor ?? (c.valor / 100).toLocaleString('pt-BR', { minimumFractionDigits: 2 }))}" ${m.multa ? '' : 'readonly'}>${m.erroValor ? '<span class="msg-erro">Valor inválido.</span>' : ''}${m.multa ? '' : '<span class="sr-only" id="dica-valor">Somente leitura. Marque a opção de multa ou juros para mudar o valor.</span>'}</div>
     </div>
     ${entrada ? '' : `<label class="check"><input type="checkbox" name="multa" data-acao="multa" ${m.multa ? 'checked' : ''}> Houve multa ou juros (ajustar o valor pago)</label>`}
-    <div class="campo ${m.erroForma ? 'erro' : ''}"><label for="p-forma">Forma de pagamento *</label><select id="p-forma" name="forma"><option value="">Selecione…</option>
+    <div class="campo ${m.erroForma ? 'erro' : ''}"><label for="p-forma">Forma de pagamento ${estrela}</label><select id="p-forma" name="forma" required><option value="">Selecione…</option>
       ${['Pix', 'Boleto', 'Transferência', 'Débito automático', 'Cartão', 'Dinheiro'].map((f) => `<option ${m.forma === f ? 'selected' : ''}>${f}</option>`).join('')}</select>
       ${m.erroForma ? '<span class="msg-erro">Escolha a forma de pagamento.</span>' : ''}</div>
-    <div class="campo"><span class="rotulo">Comprovante</span>${anexoCampo('comprovante', '', m.comprovante)}</div>
+    <div class="campo"><span class="rotulo" aria-hidden="true">Comprovante</span>${anexoCampo('comprovante', 'Comprovante', m.comprovante)}</div>
     <div class="campo"><label for="p-obs">Observação (opcional)</label><input id="p-obs" name="obs" type="text" value="${esc(m.obs || '')}"></div>
     <p class="small muted">O ${entrada ? 'recebimento' : 'pagamento'} ficará registrado em nome de ${esc(usuario().nome)}.</p>
     <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
       ${entrada ? '<span></span>' : `<button type="button" class="link small" data-acao="agendar" data-id="${c.id}">Só marcar como agendada</button>`}
       <div class="acoes"><button type="button" class="btn" data-acao="fechar-modal">Cancelar</button><button class="btn pri">Confirmar</button></div></div>
-  </form></div>`;
+  </form></div></div>`;
 }
 
 function confirmarPagamento(form) {
@@ -416,7 +482,7 @@ function confirmarPagamento(form) {
   const arquivo = ['comprovante', 'comprovante-foto', 'comprovante-cel'].map((n) => d.get(n)).find((f) => f && f.name);
   Object.assign(ui.modal, { data: d.get('data'), valor: d.get('valor'), forma: d.get('forma'), obs: d.get('obs'), multa: !!d.get('multa'),
     comprovante: arquivo ? arquivo.name : ui.modal.comprovante, erroValor: !(valor > 0), erroForma: !d.get('forma') });
-  if (ui.modal.erroValor || ui.modal.erroForma || !ui.modal.data) { render(); return; }
+  if (ui.modal.erroValor || ui.modal.erroForma || !ui.modal.data) { ui.focar = '#form-pagamento [aria-invalid="true"]'; render(); return; }
   const m = ui.modal;
   c.pagamento = { data: m.data, valor, forma: m.forma, por: usuario().nome, comprovante: m.comprovante || null, multa: m.multa, obs: m.obs };
   if (m.comprovante && !c.anexos.includes(m.comprovante)) c.anexos.push(m.comprovante);
@@ -424,7 +490,7 @@ function confirmarPagamento(form) {
   const verbo = c.tipo === 'entrada' ? 'recebimento' : 'pagamento';
   c.historico.push({ quando: agora(), texto: `${primeiroNome()} registrou o ${verbo}` });
   salvar();
-  ui.modal = null;
+  ui.modal = null; ui.focar = ui.modalOrigem;
   toast(`${c.tipo === 'entrada' ? 'Recebimento' : 'Pagamento'} de “${c.descricao}” registrado.`, c.id);
   render();
 }
@@ -457,8 +523,24 @@ function telaCalendario() {
     const l = doDia(iso);
     const abertas = l.filter((c) => !c.pagamento).sort((a, b) => URGENCIA[estado(a)] - URGENCIA[estado(b)]);
     const pagas = l.length - abertas.length;
-    return (abertas.length ? `<span class="pilula" style="background:${cor[estado(abertas[0])]}">${abertas.length} ${abertas.length > 1 ? 'contas' : 'conta'}</span>` : '')
-      + (pagas ? `<span class="pilula" style="background:var(--paga)">✓ ${pagas} paga${pagas > 1 ? 's' : ''}</span>` : '');
+    return (abertas.length ? `<span class="pilula" aria-hidden="true" style="background:${cor[estado(abertas[0])]}">${abertas.length}<span class="pil-txt"> ${abertas.length > 1 ? 'contas' : 'conta'}</span></span>` : '')
+      + (pagas ? `<span class="pilula" aria-hidden="true" style="background:var(--paga)">✓ ${pagas}<span class="pil-txt"> paga${pagas > 1 ? 's' : ''}</span></span>` : '');
+  };
+  const resumoDia = (iso) => {
+    const l = doDia(iso);
+    const partes = [`${+iso.slice(8)} de ${MESES[+iso.slice(5, 7) - 1].toLowerCase()}, ${diaSemana(iso)}`];
+    if (mesDe(iso) !== ym) return partes[0] + `, ${iso < ym ? 'mês anterior' : 'próximo mês'}`;
+    if (iso === HOJE) partes.push('hoje');
+    const abertas = l.filter((c) => !c.pagamento);
+    if (abertas.length) {
+      const porEstado = {};
+      abertas.forEach((c) => { const e = ROTULO[estado(c)].toLowerCase(); porEstado[e] = (porEstado[e] || 0) + 1; });
+      partes.push(`${abertas.length} ${abertas.length > 1 ? 'contas' : 'conta'} em aberto (${Object.entries(porEstado).map(([e, n]) => `${n} ${e}`).join(', ')})`);
+    }
+    const pagas = l.length - abertas.length;
+    if (pagas) partes.push(`${pagas} paga${pagas > 1 ? 's' : ''}`);
+    if (!l.length) partes.push('sem contas');
+    return partes.join(', ');
   };
   const sel = ui.calDia;
   const lista = doDia(sel);
@@ -467,18 +549,20 @@ function telaCalendario() {
   <div class="cab"><h1 class="titulo">Calendário</h1><a class="btn pri novo" href="#/nova?data=${sel}">+ Nova conta</a></div>
   <div class="duas">
     <div><div style="display:flex;gap:8px;align-items:center;margin-bottom:12px">
-      <div class="mes-sel"><button data-acao="mes-cal" data-delta="-1" aria-label="Mês anterior">‹</button><span>${nomeMes(ym)}</span><button data-acao="mes-cal" data-delta="1" aria-label="Próximo mês">›</button></div>
+      <div class="mes-sel">${botoesMes('mes-cal', ym)}</div>
       <button class="btn sm" data-acao="cal-hoje">Hoje</button></div>
-      <div class="cal">${['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'].map((d) => `<div class="hd">${d}</div>`).join('')}
-        ${celulas.map((iso) => `<button data-acao="dia" data-dia="${iso}" class="${mesDe(iso) !== ym ? 'fora' : ''} ${iso === sel ? 'sel' : ''} ${iso === HOJE ? 'hoje-dia' : ''}" aria-label="${dataBR(iso)}">
-          <span class="d">${+iso.slice(8)}</span>${mesDe(iso) === ym ? pilulas(iso) : ''}</button>`).join('')}</div>
-      <div class="legenda" style="margin-top:10px"><span><i style="background:var(--vencida)"></i>vencida</span><span><i style="background:var(--hoje)"></i>vence hoje</span><span><i style="background:var(--avencer)"></i>a vencer</span><span><i style="background:var(--agendada)"></i>agendada</span><span><i style="background:var(--paga)"></i>paga</span></div>
+      <p class="sr-only" id="dica-cal">Use as setas do teclado para mudar de dia, Page Up e Page Down para mudar de mês.</p>
+      <!-- só o dia selecionado entra no Tab; as setas movem entre os dias (padrão de grade do WAI-ARIA) -->
+      <div class="cal" role="group" aria-label="Calendário de ${nomeMes(ym)}" aria-describedby="dica-cal">${['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'].map((d) => `<div class="hd" aria-hidden="true">${d}</div>`).join('')}
+        ${celulas.map((iso) => `<button data-acao="dia" data-dia="${iso}" tabindex="${iso === sel ? 0 : -1}" aria-pressed="${iso === sel}"${iso === HOJE ? ' aria-current="date"' : ''} class="${mesDe(iso) !== ym ? 'fora' : ''} ${iso === sel ? 'sel' : ''} ${iso === HOJE ? 'hoje-dia' : ''}" aria-label="${resumoDia(iso)}">
+          <span class="d" aria-hidden="true">${+iso.slice(8)}</span>${mesDe(iso) === ym ? pilulas(iso) : ''}</button>`).join('')}</div>
+      <div class="legenda" aria-hidden="true" style="margin-top:10px"><span><i style="background:var(--vencida)"></i>vencida</span><span><i style="background:var(--hoje)"></i>vence hoje</span><span><i style="background:var(--avencer)"></i>a vencer</span><span><i style="background:var(--agendada)"></i>agendada</span><span><i style="background:var(--paga)"></i>paga</span></div>
     </div>
-    <section class="card"><h2 style="margin-bottom:6px">Contas de ${curta(sel)}</h2><div class="lista-simples">
+    <section class="card" aria-live="polite" aria-atomic="false"><h2 style="margin-bottom:6px">Contas de ${curta(sel)}</h2><div class="lista-simples">
       ${lista.map((c) => `<div style="flex-direction:column;gap:4px"><a href="#/conta/${c.id}" style="display:flex;justify-content:space-between;color:inherit;text-decoration:none"><b>${esc(c.descricao)}</b><b>${fmt(c.valor)}</b></a><span>${tag(c)}</span></div>`).join('') || '<p class="small muted" style="padding:8px 0">Nenhuma conta neste dia.</p>'}
       </div>
       ${proximas.length ? `<p class="small muted" style="margin-top:12px">Próximos dias</p><div class="lista-simples">${proximas.map((c) => `<div><a href="#/conta/${c.id}" style="color:inherit;text-decoration:none"><b>${esc(c.descricao)}</b><div class="small muted">${curta(c.venc)}</div></a><span>${fmt(c.valor)}</span></div>`).join('')}</div>` : ''}
-      <a href="#/nova?data=${sel}" style="display:inline-block;margin-top:12px;font-weight:600">+ Adicionar conta neste dia</a>
+      <a href="#/nova?data=${sel}" style="display:inline-block;margin-top:12px;font-weight:600">+ Adicionar conta em ${curta(sel)}</a>
     </section>
   </div>`;
 }
@@ -514,28 +598,33 @@ function telaRelatorios() {
   const lanc = todos ? doMes : doMes.slice(0, 6);
   return `
   <div class="cab"><div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap"><h1 class="titulo">Relatórios</h1>
-    <div class="mes-sel"><button data-acao="mes-rel" data-delta="-1" aria-label="Mês anterior">‹</button><span>${nomeMes(mes)}</span><button data-acao="mes-rel" data-delta="1" aria-label="Próximo mês">›</button></div>
-    <label class="sr-only" for="cat-rel">Categoria</label><select id="cat-rel" style="width:210px" class="nao-imprime"><option value="">Todas as categorias</option>${categoriasAtivas().map((c) => `<option ${cat === c ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select></div>
+    <div class="mes-sel">${botoesMes('mes-rel', mes)}</div>
+    <label class="sr-only" for="cat-rel">Filtrar por categoria</label><select id="cat-rel" style="width:210px" class="nao-imprime"><option value="">Todas as categorias</option>${categoriasAtivas().map((c) => `<option ${cat === c ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select></div>
     <div class="acoes nao-imprime"><button class="btn" data-acao="exportar-planilha">Exportar planilha</button><button class="btn pri" data-acao="exportar-pdf">Exportar PDF</button></div></div>
   <div class="grid-3">
-    <div class="card"><span class="muted">Entradas ↑</span><div class="grande verde">${fmt(r.entradas)}</div></div>
-    <div class="card"><span class="muted">Saídas ↓</span><div class="grande vermelho">${fmt(r.saidas)}</div></div>
+    <div class="card"><span class="muted">Entradas <span aria-hidden="true">↑</span></span><div class="grande verde">${fmt(r.entradas)}</div></div>
+    <div class="card"><span class="muted">Saídas <span aria-hidden="true">↓</span></span><div class="grande vermelho">${fmt(r.saidas)}</div></div>
     <div class="card" style="border:2px solid var(--azul)"><span class="muted">Saldo do mês</span><div class="grande azul">${fmt(r.saldo)}</div></div>
   </div>
   <div class="duas-igual" style="margin-bottom:20px">
     <section class="card"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px"><h2>Entradas e saídas</h2>
-      <div class="seg nao-imprime"><button class="${modo === 'semana' ? 'on' : ''}" data-acao="modo-rel" data-modo="semana">Por semana</button><button class="${modo === 'meses' ? 'on' : ''}" data-acao="modo-rel" data-modo="meses">Últimos 6 meses</button></div></div>
-      <div class="legenda" style="margin-bottom:10px"><span><i style="background:var(--paga)"></i>Entradas</span><span><i style="background:var(--vencida)"></i>Saídas</span></div>
-      <div class="barras" role="img" aria-label="Gráfico de entradas e saídas">${grupos.map((g) => `<div class="g"><div class="b ent" style="height:${(g.entradas / max) * 100}%" title="Entradas ${fmt(g.entradas)}"></div><div class="b sai" style="height:${(g.saidas / max) * 100}%" title="Saídas ${fmt(g.saidas)}"></div></div>`).join('')}</div>
-      <div class="rotulos">${grupos.map((g) => `<span>${g.rot}</span>`).join('')}</div></section>
+      <div class="seg nao-imprime" role="group" aria-label="Agrupar gráfico"><button class="${modo === 'semana' ? 'on' : ''}" aria-pressed="${modo === 'semana'}" data-acao="modo-rel" data-modo="semana">Por semana</button><button class="${modo === 'meses' ? 'on' : ''}" aria-pressed="${modo === 'meses'}" data-acao="modo-rel" data-modo="meses">Últimos 6 meses</button></div></div>
+      <div class="legenda" aria-hidden="true" style="margin-bottom:10px"><span><i style="background:var(--paga)"></i>Entradas</span><span><i style="background:var(--vencida)"></i>Saídas</span></div>
+      <!-- o gráfico é só visual; os mesmos números estão na tabela logo abaixo (alternativa textual, WCAG 1.1.1) -->
+      <div aria-hidden="true"><div class="barras">${grupos.map((g) => `<div class="g"><div class="b ent" style="height:${(g.entradas / max) * 100}%" title="Entradas ${fmt(g.entradas)}"></div><div class="b sai" style="height:${(g.saidas / max) * 100}%" title="Saídas ${fmt(g.saidas)}"></div></div>`).join('')}</div>
+      <div class="rotulos">${grupos.map((g) => `<span>${g.rot}</span>`).join('')}</div></div>
+      <details class="dados-grafico"${ui.rel.tabela ? ' open' : ''}><summary data-acao="tabela-rel">Ver os valores do gráfico em tabela</summary>
+        <table><caption class="sr-only">Entradas e saídas ${modo === 'semana' ? 'por semana de ' + nomeMes(mes) : 'nos últimos 6 meses'}</caption>
+        <thead><tr><th scope="col">${modo === 'semana' ? 'Semana' : 'Mês'}</th><th scope="col" class="num">Entradas</th><th scope="col" class="num">Saídas</th></tr></thead>
+        <tbody>${grupos.map((g) => `<tr style="cursor:default"><th scope="row">${modo === 'semana' ? g.rot.replace('Sem.', 'Semana') : g.rot}</th><td class="num">${fmt(g.entradas)}</td><td class="num">${fmt(g.saidas)}</td></tr>`).join('')}</tbody></table></details></section>
     <section class="card"><h2 style="margin-bottom:12px">Saídas por categoria</h2>
-      ${cats.map(([n, v]) => `<div class="hbarra"><span>${esc(n)}</span><div class="trilho"><div style="width:${(v / maxCat) * 100}%"></div></div><span class="num muted">${fmt(v)} · ${Math.round((v / (r.saidas || 1)) * 100)}%</span></div>`).join('') || '<p class="small muted">Sem saídas neste mês.</p>'}</section>
+      ${cats.map(([n, v]) => `<div class="hbarra"><span>${esc(n)}</span><div class="trilho" aria-hidden="true"><div style="width:${(v / maxCat) * 100}%"></div></div><span class="num muted">${fmt(v)} · ${Math.round((v / (r.saidas || 1)) * 100)}%</span></div>`).join('') || '<p class="small muted">Sem saídas neste mês.</p>'}</section>
   </div>
   <section class="card tabela"><div class="topo"><div><h2 style="display:inline">Lançamentos do mês</h2> <span class="small muted">com comprovante vinculado</span></div>
     ${doMes.length > 6 ? `<button class="link small nao-imprime" data-acao="todos-rel">${todos ? 'Mostrar menos' : `Ver todos os ${doMes.length} lançamentos →`}</button>` : ''}</div>
-    ${lanc.length ? `<table><thead><tr><th>Data</th><th>Descrição</th><th class="esconde-cel">Tipo</th><th class="num">Valor</th><th class="esconde-cel">Comprovante</th></tr></thead><tbody>
-    ${lanc.map((c) => `<tr data-ir="#/conta/${c.id}"><td>${curta(c.venc)}</td><td>${esc(c.descricao)}</td><td class="esconde-cel">${c.tipo === 'entrada' ? 'Entrada' : 'Saída'}</td>
-      <td class="num ${c.tipo === 'entrada' ? 'verde' : ''}">${fmt(valorPago(c))}</td><td class="esconde-cel">${c.pagamento?.comprovante || c.anexos.length ? '<span class="arq">PDF</span>' : '<span class="muted">—</span>'}</td></tr>`).join('')}
+    ${lanc.length ? `<table><caption class="sr-only">Lançamentos de ${nomeMes(mes)}</caption><thead><tr><th scope="col">Data</th><th scope="col">Descrição</th><th scope="col" class="esconde-cel">Tipo</th><th scope="col" class="num">Valor</th><th scope="col" class="esconde-cel">Comprovante</th></tr></thead><tbody>
+    ${lanc.map((c) => `<tr data-ir="#/conta/${c.id}"><td>${curta(c.venc)}</td><td><a class="linha-link" style="font-weight:500" href="#/conta/${c.id}">${esc(c.descricao)}</a></td><td class="esconde-cel">${c.tipo === 'entrada' ? 'Entrada' : 'Saída'}</td>
+      <td class="num ${c.tipo === 'entrada' ? 'verde' : ''}">${fmt(valorPago(c))}</td><td class="esconde-cel">${c.pagamento?.comprovante || c.anexos.length ? '<span class="arq">PDF</span>' : '<span class="muted" aria-label="sem comprovante">—</span>'}</td></tr>`).join('')}
     </tbody></table>` : '<p class="vazio">Nenhum lançamento neste mês.</p>'}</section>`;
 }
 
@@ -555,12 +644,12 @@ function exportarPlanilha() {
 
 function telaConfig(r) {
   const aba = r.id || 'lembretes';
-  const abas = [['lembretes', 'Lembretes'], ['usuarios', 'Usuários'], ['categorias', 'Categorias']];
+  const abas = [['lembretes', 'Lembretes'], ['usuarios', 'Usuários'], ['categorias', 'Categorias'], ['acessibilidade', 'Acessibilidade']];
   let corpo = '';
   if (aba === 'lembretes') {
     if (!ui.rascunhoConfig) ui.rascunhoConfig = { config: structuredClone(db.config), receb: Object.fromEntries(db.usuarios.map((u) => [u.id, u.lembretes])) };
     const rc = ui.rascunhoConfig;
-    const sw = (grupo, chave, nome) => `<label class="linha-switch"><span>${nome}</span><span class="switch"><input type="checkbox" data-acao="sw" data-grupo="${grupo}" data-chave="${chave}" ${rc.config[grupo][chave] ? 'checked' : ''}><span></span></span></label>`;
+    const sw = (grupo, chave, nome) => `<label class="linha-switch"><span>${nome}</span><span class="switch"><input type="checkbox" role="switch" data-acao="sw" data-grupo="${grupo}" data-chave="${chave}" ${rc.config[grupo][chave] ? 'checked' : ''}><span></span></span></label>`;
     const ex = urgentes().find((c) => estado(c) === 'avencer') || saidas()[0];
     corpo = `<div class="duas-igual">
       <div class="pilha">
@@ -568,43 +657,69 @@ function telaConfig(r) {
         <section class="card"><h2>Como avisar</h2>${sw('como', 'email', 'E-mail')}${sw('como', 'navegador', 'Notificação no navegador')}${sw('como', 'celular', 'Notificação no celular')}</section>
       </div>
       <div class="pilha">
-        <section class="card"><h2>Quem recebe</h2>${db.usuarios.map((u) => `<label class="linha-switch"><span style="display:flex;gap:10px;align-items:center"><span class="avatar">${iniciais(u.nome)}</span><span><b>${esc(u.nome)}</b><br><span class="small muted">${u.perfil}</span></span></span>
-          <span class="switch"><input type="checkbox" data-acao="sw-user" data-id="${u.id}" ${rc.receb[u.id] ? 'checked' : ''}><span></span></span></label>`).join('')}
-          <a href="#/config/usuarios" class="small">Gerenciar usuários e perfis →</a></section>
+        <section class="card"><h2>Quem recebe</h2>${db.usuarios.map((u) => `<label class="linha-switch"><span style="display:flex;gap:10px;align-items:center"><span class="avatar" aria-hidden="true">${iniciais(u.nome)}</span><span><b>${esc(u.nome)}</b><br><span class="small muted">${u.perfil}</span></span></span>
+          <span class="switch"><input type="checkbox" role="switch" data-acao="sw-user" data-id="${u.id}" ${rc.receb[u.id] ? 'checked' : ''}><span></span></span></label>`).join('')}
+          <a href="#/config/usuarios" class="small">Gerenciar usuários e perfis <span aria-hidden="true">→</span></a></section>
         <div><p class="small muted" style="margin-bottom:6px">Prévia da mensagem</p><div class="card" style="background:var(--fundo)">
-          <b><span style="color:var(--rosa)">♡ Cor</span><span class="azul">Ação</span> em Dia</b><p style="margin:6px 0">A <b>${esc(ex.descricao)}</b> vence ${prazo(ex)}.</p>
+          <b><span style="color:var(--rosa-texto)"><span aria-hidden="true">♡</span> Cor</span><span class="azul">Ação</span> em Dia</b><p style="margin:6px 0">A <b>${esc(ex.descricao)}</b> vence ${prazo(ex)}.</p>
           <p>Vencimento: ${curta(ex.venc)} · Valor: ${fmt(ex.valor)}</p><a class="btn sm pri" style="margin-top:10px" href="#/conta/${ex.id}">Abrir conta</a></div></div>
       </div></div>
       <div class="acoes" style="margin-top:20px"><button class="btn pri" data-acao="salvar-config">Salvar alterações</button></div>`;
   } else if (aba === 'usuarios') {
-    corpo = `<section class="card tabela"><table><thead><tr><th>Nome</th><th class="esconde-cel">E-mail</th><th>Perfil</th></tr></thead><tbody>
+    corpo = `<section class="card tabela"><table><caption class="sr-only">Usuários com acesso</caption><thead><tr><th scope="col">Nome</th><th scope="col" class="esconde-cel">E-mail</th><th scope="col">Perfil</th></tr></thead><tbody>
       ${db.usuarios.map((u) => `<tr style="cursor:default"><td><b>${esc(u.nome)}</b>${u.id === usuarioId ? ' <span class="small muted">(você)</span>' : ''}</td><td class="esconde-cel">${esc(u.email)}</td>
         <td><select data-acao="perfil" data-id="${u.id}" style="width:170px" aria-label="Perfil de ${esc(u.nome)}">${['Financeiro', 'Apoio', 'Diretoria'].map((p) => `<option ${u.perfil === p ? 'selected' : ''}>${p}</option>`).join('')}</select></td></tr>`).join('')}
       </tbody></table></section>
       <p class="small muted" style="margin:10px 0 20px">Financeiro: todas as funções · Apoio: cadastra contas, anexa documentos e consulta · Diretoria: consulta e exporta relatórios.</p>
       <form id="form-convite" class="card form" novalidate><h2>Convidar usuário</h2>
-        <div class="linha"><div class="campo ${ui.erros.convite ? 'erro' : ''}"><label for="c-nome">Nome</label><input id="c-nome" name="nome" type="text"></div>
-        <div class="campo ${ui.erros.convite ? 'erro' : ''}"><label for="c-email">E-mail</label><input id="c-email" name="email" type="email">${ui.erros.convite ? `<span class="msg-erro">${ui.erros.convite}</span>` : ''}</div></div>
+        <div class="linha"><div class="campo ${ui.erros.convite ? 'erro' : ''}"><label for="c-nome">Nome</label><input id="c-nome" name="nome" type="text" autocomplete="off"></div>
+        <div class="campo ${ui.erros.convite ? 'erro' : ''}"><label for="c-email">E-mail</label><input id="c-email" name="email" type="email" autocomplete="off">${ui.erros.convite ? `<span class="msg-erro">${ui.erros.convite}</span>` : ''}</div></div>
         <div class="campo" style="max-width:240px"><label for="c-perfil">Perfil</label><select id="c-perfil" name="perfil"><option>Apoio</option><option>Diretoria</option><option>Financeiro</option></select></div>
         <div class="acoes"><button class="btn pri">Enviar convite</button></div></form>`;
+  } else if (aba === 'acessibilidade') {
+    const tam = [['normal', 'Normal'], ['grande', 'Grande'], ['muito', 'Muito grande']];
+    corpo = `<div class="duas-igual">
+      <div class="pilha">
+        <section class="card"><h2 id="t-fonte">Tamanho do texto</h2>
+          <p class="small muted" style="margin:4px 0 12px">Aumenta todos os textos do sistema. Vale só para este navegador.</p>
+          <div class="seg" role="group" aria-labelledby="t-fonte">${tam.map(([id, nome]) => `<button type="button" class="${pref.fonte === id ? 'on' : ''}" aria-pressed="${pref.fonte === id}" data-acao="pref-fonte" data-fonte="${id}">${nome}</button>`).join('')}</div>
+          <div class="amostra"><b>Conta de energia</b> · R$ 142,30 <span class="tag hoje">Vence hoje</span></div></section>
+        <section class="card"><h2>Cores</h2>
+          <label class="linha-switch"><span><b>Alto contraste</b><br><span class="small muted">Textos mais escuros, bordas mais fortes e links sempre sublinhados.</span></span>
+            <span class="switch"><input type="checkbox" role="switch" data-acao="pref-contraste" ${pref.contraste ? 'checked' : ''}><span></span></span></label>
+          <p class="small muted" style="margin-top:8px">Os estados das contas nunca dependem só da cor: toda etiqueta tem texto (Vencida, Vence hoje, Paga…).</p></section>
+      </div>
+      <section class="card"><h2 style="margin-bottom:10px">Usar só com o teclado</h2>
+        <div class="atalhos">
+          <kbd>Tab</kbd><span>vai para o próximo botão, link ou campo (<kbd>Shift</kbd> + <kbd>Tab</kbd> volta)</span>
+          <kbd>Enter</kbd><span>abre o link ou aciona o botão em foco</span>
+          <kbd>Esc</kbd><span>fecha a janela de pagamento, o menu ⋯ e os lembretes</span>
+          <kbd>← ↑ → ↓</kbd><span>no calendário, muda o dia selecionado</span>
+          <kbd>Page Up/Down</kbd><span>no calendário, muda o mês</span>
+        </div>
+        <p class="small muted" style="margin-top:14px">O primeiro Tab de cada página mostra o link “Pular para o conteúdo”, que leva direto ao conteúdo sem passar pelo menu.</p>
+        <h2 style="margin:18px 0 8px">Leitores de tela</h2>
+        <p class="small">Botões só com ícone têm nome, as tabelas e campos têm rótulos, os erros de formulário são lidos junto com o campo, os avisos (“Pagamento registrado”) são anunciados automaticamente e o gráfico de relatórios tem uma tabela com os mesmos valores.</p>
+      </section></div>`;
   } else {
     corpo = `<section class="card"><div class="lista-simples">${db.categorias.map((c, i) => `<div style="align-items:center"><span class="${c.arquivada ? 'muted' : ''}">${esc(c.nome)}${c.arquivada ? ' <span class="small">(arquivada)</span>' : ''}</span>
-      <span style="display:flex;gap:14px"><button class="link small" data-acao="renomear-cat" data-i="${i}">Renomear</button><button class="link small" data-acao="arquivar-cat" data-i="${i}">${c.arquivada ? 'Reativar' : 'Arquivar'}</button></span></div>`).join('')}</div></section>
+      <span style="display:flex;gap:14px"><button class="link small" data-acao="renomear-cat" data-i="${i}">Renomear<span class="sr-only"> ${esc(c.nome)}</span></button><button class="link small" data-acao="arquivar-cat" data-i="${i}">${c.arquivada ? 'Reativar' : 'Arquivar'}<span class="sr-only"> ${esc(c.nome)}</span></button></span></div>`).join('')}</div></section>
       <form id="form-categoria" class="card" style="margin-top:20px;display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap" novalidate>
         <div class="campo ${ui.erros.categoria ? 'erro' : ''}" style="flex:1;min-width:200px"><label for="nova-cat">Nova categoria</label><input id="nova-cat" name="nome" type="text">${ui.erros.categoria ? `<span class="msg-erro">${ui.erros.categoria}</span>` : ''}</div>
         <button class="btn pri">Adicionar</button></form>`;
   }
   return `
-  <div class="cab"><div><h1 class="titulo">Configurações</h1><p class="muted">Defina quando, como e para quem o sistema avisa, quem acessa e quais categorias existem.</p></div></div>
-  <div class="abas">${abas.map(([id, nome]) => `<button class="${aba === id ? 'on' : ''}" data-acao="ir" data-hash="#/config/${id}">${nome}</button>`).join('')}</div>
+  <div class="cab"><div><h1 class="titulo">Configurações</h1><p class="muted">Defina quando, como e para quem o sistema avisa, quem acessa, quais categorias existem e como o sistema aparece para você.</p></div></div>
+  <nav class="abas" aria-label="Seções de configurações">${abas.map(([id, nome]) => `<a class="${aba === id ? 'on' : ''}" href="#/config/${id}"${aba === id ? ' aria-current="page"' : ''}>${nome}</a>`).join('')}</nav>
   ${corpo}
   <p class="small muted nao-imprime" style="margin-top:32px">Protótipo: <button class="link small" data-acao="restaurar">restaurar dados de exemplo</button> · <a href="#/sair" data-acao="sair">sair</a></p>`;
 }
 
 // ---------------------------------------------------------------- render
 function render() {
-  const foco = document.activeElement?.id;
-  const cursor = foco && 'selectionStart' in document.activeElement ? document.activeElement.selectionStart : null;
+  const foco = chaveFoco(document.activeElement);
+  const tinhaFoco = document.activeElement !== document.body && !!document.activeElement?.closest('#app');
+  const cursor = document.activeElement?.id && 'selectionStart' in document.activeElement ? document.activeElement.selectionStart : null;
   const r = rota();
   const raiz = $('#app');
   if (!usuario()) {
@@ -620,12 +735,15 @@ function render() {
     atualizarPrevia();
   }
   if (ui.toast) {
-    raiz.insertAdjacentHTML('beforeend', `<div class="toast" role="status"><span>${esc(ui.toast.texto)}</span>${ui.toast.desfazer ? `<button data-acao="desfazer-pagamento" data-id="${ui.toast.desfazer}">Desfazer</button>` : ''}</div>`);
+    raiz.insertAdjacentHTML('beforeend', `<div class="toast"><span>${esc(ui.toast.texto)}</span>${ui.toast.desfazer ? `<button data-acao="desfazer-pagamento" data-id="${ui.toast.desfazer}">Desfazer<span class="sr-only"> ${esc(ui.toast.texto.replace(/ registrado\.$/, ''))}</span></button>` : ''}</div>`);
   }
-  if (foco && document.getElementById(foco)) {
-    const el = document.getElementById(foco);
-    el.focus();
-    if (cursor != null && el.setSelectionRange && el.type !== 'date' && el.type !== 'email') try { el.setSelectionRange(cursor, cursor); } catch { /* campo sem cursor */ }
+  ligarErros(raiz);
+  const pedido = ui.focar; ui.focar = null;
+  if (!focar(pedido)) {
+    if (foco && focar(foco)) {
+      const el = document.activeElement;
+      if (cursor != null && el.setSelectionRange && el.type !== 'date' && el.type !== 'email') try { el.setSelectionRange(cursor, cursor); } catch { /* campo sem cursor */ }
+    } else if (pedido || tinhaFoco) focar('main h1'); // o elemento focado sumiu (ex.: conta paga saiu da lista): vai para o título em vez de cair no <body>
   }
 }
 
@@ -643,31 +761,42 @@ document.addEventListener('click', (ev) => {
   const { acao, id } = alvo.dataset;
   if (acao === 'fechar-modal' && alvo.classList.contains('modal-fundo') && ev.target !== alvo) return; // clique dentro da janela
   if (alvo.tagName === 'INPUT' || alvo.tagName === 'SELECT') return; // tratados no "change"
+  if (acao === 'tabela-rel') { ui.rel.tabela = !alvo.parentElement.open; return; } // o <details> abre sozinho
   ev.preventDefault();
   if (acao !== 'menu') ui.menu = null;
   if (acao !== 'notif') ui.notif = false;
   const f = ui.lista;
+  let aviso = null;
   switch (acao) {
-    case 'mostrar-senha': { const s = $('#senha'); s.type = s.type === 'password' ? 'text' : 'password'; alvo.textContent = s.type === 'password' ? 'mostrar' : 'ocultar'; return; }
+    case 'mostrar-senha': {
+      const s = $('#senha'); const mostrando = s.type === 'password';
+      s.type = mostrando ? 'text' : 'password';
+      alvo.innerHTML = `${mostrando ? 'ocultar' : 'mostrar'}<span class="sr-only"> senha</span>`;
+      alvo.setAttribute('aria-pressed', String(mostrando)); return;
+    }
+    case 'pular': focar('main h1'); return;
     case 'esqueci': toast('Se o e-mail estiver cadastrado, enviaremos um link para criar uma nova senha.'); break;
     case 'sair':
       try { localStorage.removeItem('coracao-usuario'); sessionStorage.removeItem('coracao-usuario'); } catch { /* ok */ }
       usuarioId = null; ui.modal = null; location.hash = '#/login'; break;
-    case 'notif': ui.notif = !ui.notif; break;
+    case 'notif': ui.notif = !ui.notif; if (ui.notif) ui.focar = lembretesAtivos().length ? '#painel-lembretes .item' : '#painel-lembretes'; break;
     case 'ir': location.hash = alvo.dataset.hash; return;
     case 'filtrar': Object.assign(f, { tipo: 'saida', estado: alvo.dataset.estado, q: '', cat: '', mes: mesDe(HOJE), pagina: 1, ordem: 'venc', dir: 1 }); ir('#/contas'); return;
-    case 'tipo-lista': Object.assign(f, { tipo: alvo.dataset.tipo, estado: 'todos', pagina: 1 }); break;
-    case 'aba-estado': Object.assign(f, { estado: alvo.dataset.estado, pagina: 1 }); break;
-    case 'mes-lista': f.mes = mudarMes(f.mes, +alvo.dataset.delta); f.pagina = 1; break;
-    case 'ordenar': f.dir = f.ordem === alvo.dataset.campo ? -f.dir : 1; f.ordem = alvo.dataset.campo; break;
-    case 'pagina': f.pagina += +alvo.dataset.delta; break;
-    case 'menu': ui.menu = ui.menu === id ? null : id; break;
-    case 'pagar': ui.modal = { id }; break;
-    case 'fechar-modal': ui.modal = null; break;
+    case 'tipo-lista': Object.assign(f, { tipo: alvo.dataset.tipo, estado: 'todos', pagina: 1 }); aviso = avisoLista; break;
+    case 'aba-estado': Object.assign(f, { estado: alvo.dataset.estado, pagina: 1 }); aviso = avisoLista; break;
+    case 'mes-lista': f.mes = mudarMes(f.mes, +alvo.dataset.delta); f.pagina = 1; aviso = () => `${nomeMes(f.mes)}. ${avisoLista()}`; break;
+    case 'ordenar': f.dir = f.ordem === alvo.dataset.campo ? -f.dir : 1; f.ordem = alvo.dataset.campo; aviso = () => `Ordenado por ${alvo.textContent.replace(/[↓↑↕]|, ordenar/g, '').trim().toLowerCase()}, ${f.dir > 0 ? 'crescente' : 'decrescente'}.`; break;
+    case 'pagina': f.pagina += +alvo.dataset.delta; aviso = () => `Página ${f.pagina}.`; break;
+    case 'menu': ui.menu = ui.menu === id ? null : id; if (ui.menu) ui.focar = '.menu-linha .menu button'; break;
+    case 'pagar':
+      ui.modalOrigem = alvo.closest('.menu-linha') ? `[data-acao="menu"][data-id="${CSS.escape(id)}"]` : chaveFoco(alvo);
+      ui.modal = { id }; ui.focar = '#p-data'; break;
+    case 'fechar-modal': ui.modal = null; ui.focar = ui.modalOrigem; break;
     case 'agendar': {
       const c = conta(id);
       c.agendada = !c.agendada;
       c.historico.push({ quando: agora(), texto: `${primeiroNome()} ${c.agendada ? 'marcou como agendada no banco' : 'desmarcou o agendamento'}` });
+      if (ui.modal) ui.focar = ui.modalOrigem;
       salvar(); ui.modal = null; toast(c.agendada ? `“${c.descricao}” marcada como agendada.` : 'Agendamento desmarcado.'); break;
     }
     case 'desfazer-pagamento': desfazerPagamento(id); return;
@@ -683,11 +812,12 @@ document.addEventListener('click', (ev) => {
       const form = $('#form-conta');
       ui.erros = { ...ui.erros, valores: { ...lerForm(form), tipo: alvo.dataset.tipo } }; break;
     }
-    case 'mes-cal': ui.calMes = mudarMes(ui.calMes, +alvo.dataset.delta); ui.calDia = ui.calMes + '-01'; break;
+    case 'mes-cal': ui.calMes = mudarMes(ui.calMes, +alvo.dataset.delta); ui.calDia = ui.calMes + '-01'; aviso = () => `Calendário de ${nomeMes(ui.calMes)}.`; break;
     case 'cal-hoje': ui.calMes = mesDe(HOJE); ui.calDia = HOJE; break;
     case 'dia': ui.calDia = alvo.dataset.dia; ui.calMes = mesDe(ui.calDia); break;
-    case 'mes-rel': ui.rel.mes = mudarMes(ui.rel.mes, +alvo.dataset.delta); ui.rel.todos = false; break;
+    case 'mes-rel': ui.rel.mes = mudarMes(ui.rel.mes, +alvo.dataset.delta); ui.rel.todos = false; aviso = () => `Relatório de ${nomeMes(ui.rel.mes)}.`; break;
     case 'modo-rel': ui.rel.modo = alvo.dataset.modo; break;
+    case 'pref-fonte': pref.fonte = alvo.dataset.fonte; salvarPreferencias(); aviso = () => `Tamanho do texto: ${alvo.textContent.toLowerCase()}.`; break;
     case 'todos-rel': ui.rel.todos = !ui.rel.todos; break;
     case 'exportar-planilha': exportarPlanilha(); return;
     case 'exportar-pdf': ui.rel.todos = true; render(); window.print(); return;
@@ -710,7 +840,9 @@ document.addEventListener('click', (ev) => {
     default: return;
   }
   render();
+  if (aviso) anunciar(aviso());
 });
+const avisoLista = () => { const n = filtrarLista().linhas.length; return n ? `${n} ${n > 1 ? 'contas encontradas' : 'conta encontrada'}.` : 'Nenhuma conta encontrada.'; };
 
 document.addEventListener('change', (ev) => {
   const el = ev.target;
@@ -722,6 +854,7 @@ document.addEventListener('change', (ev) => {
     render(); if (el.checked) $('#p-valor')?.focus();
   } else if (el.dataset.acao === 'sw') ui.rascunhoConfig.config[el.dataset.grupo][el.dataset.chave] = el.checked;
   else if (el.dataset.acao === 'sw-user') ui.rascunhoConfig.receb[el.dataset.id] = el.checked;
+  else if (el.dataset.acao === 'pref-contraste') { pref.contraste = el.checked; salvarPreferencias(); anunciar(el.checked ? 'Alto contraste ligado.' : 'Alto contraste desligado.'); }
   else if (el.dataset.acao === 'perfil') {
     const u = db.usuarios.find((x) => x.id === el.dataset.id);
     u.perfil = el.value; salvar(); toast(`Perfil de ${u.nome.split(' ')[0]} alterado para ${el.value}.`); render();
@@ -731,7 +864,6 @@ document.addEventListener('change', (ev) => {
     c.historico.push({ quando: agora(), texto: `${primeiroNome()} anexou ${el.files[0].name}` });
     salvar(); toast('Anexo adicionado.'); render();
   } else if (el.type === 'file' && el.files[0]) {
-    // mostra o nome do arquivo escolhido sem perder o resto do formulário
     if (el.closest('#form-conta')) { ui.erros = { ...ui.erros, valores: { ...lerForm($('#form-conta')), anexo: el.files[0].name } }; render(); }
     else if (el.closest('#form-pagamento')) {
       const d = new FormData($('#form-pagamento'));
@@ -742,14 +874,50 @@ document.addEventListener('change', (ev) => {
   if (el.closest('#form-conta')) atualizarPrevia();
 });
 
+document.addEventListener('mouseover', (ev) => { if (ev.target.closest?.('.toast')) clearTimeout(timerToast); });
+document.addEventListener('focusin', (ev) => { if (ev.target.closest?.('.toast')) clearTimeout(timerToast); });
+document.addEventListener('mouseout', (ev) => { if (ev.target.closest?.('.toast') && !ev.relatedTarget?.closest?.('.toast') && ui.toast) iniciarTimerToast(); });
+document.addEventListener('focusout', (ev) => { if (ev.target.closest?.('.toast') && !ev.relatedTarget?.closest?.('.toast') && ui.toast) iniciarTimerToast(); });
+
+let timerBusca;
 document.addEventListener('input', (ev) => {
   const el = ev.target;
-  if (el.id === 'busca-lista') { ui.lista.q = el.value; ui.lista.pagina = 1; render(); }
+  if (el.id === 'busca-lista') {
+    ui.lista.q = el.value; ui.lista.pagina = 1; render();
+    clearTimeout(timerBusca); timerBusca = setTimeout(() => anunciar(avisoLista()), 800); // espera parar de digitar
+  }
   else if (el.closest('#form-conta')) atualizarPrevia();
 });
 
 document.addEventListener('keydown', (ev) => {
-  if (ev.key === 'Escape' && (ui.modal || ui.menu || ui.notif)) { ui.modal = null; ui.menu = null; ui.notif = false; render(); }
+  if (ev.key === 'Escape' && (ui.modal || ui.menu || ui.notif)) {
+    ui.focar = ui.modal ? ui.modalOrigem : ui.menu ? `[data-acao="menu"][data-id="${CSS.escape(ui.menu)}"]` : '[data-acao="notif"]';
+    ui.modal = null; ui.menu = null; ui.notif = false; render(); return;
+  }
+  if (ev.key === 'Tab' && ui.modal) {
+    const itens = [...document.querySelectorAll(`.modal ${FOCAVEIS.split(', ').join(', .modal ')}`)].filter((e) => e.offsetParent !== null);
+    if (itens.length) {
+      const [primeiro, ultimo] = [itens[0], itens[itens.length - 1]];
+      if (ev.shiftKey && document.activeElement === primeiro) { ev.preventDefault(); ultimo.focus(); }
+      else if (!ev.shiftKey && document.activeElement === ultimo) { ev.preventDefault(); primeiro.focus(); }
+      else if (!document.activeElement.closest('.modal')) { ev.preventDefault(); primeiro.focus(); }
+    }
+  }
+  if (ev.target.dataset?.acao === 'dia') {
+    const passo = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -7, ArrowDown: 7 }[ev.key];
+    const meses = { PageUp: -1, PageDown: 1 }[ev.key];
+    let novo = null;
+    if (passo) { const d = new Date(ev.target.dataset.dia + 'T12:00:00'); d.setDate(d.getDate() + passo); novo = d.toISOString().slice(0, 10); }
+    else if (meses) novo = addMeses(ev.target.dataset.dia, meses);
+    else if (ev.key === 'Home') novo = ui.calMes + '-01';
+    else if (ev.key === 'End') { const [y, m] = ui.calMes.split('-').map(Number); novo = `${ui.calMes}-${new Date(y, m, 0).getDate()}`; }
+    if (novo) {
+      ev.preventDefault();
+      const mudouMes = mesDe(novo) !== ui.calMes;
+      ui.calDia = novo; ui.calMes = mesDe(novo); ui.focar = `[data-dia="${novo}"]`; render();
+      if (mudouMes) anunciar(`Calendário de ${nomeMes(ui.calMes)}.`);
+    }
+  }
   if (ev.key === 'Enter' && ev.target.id === 'busca-global') {
     Object.assign(ui.lista, { q: ev.target.value, estado: 'todos', pagina: 1 });
     ir('#/contas');
@@ -766,7 +934,7 @@ document.addEventListener('submit', (ev) => {
     if (!email) ui.erros.email = 'Informe seu e-mail.';
     else if (!u) ui.erros.email = 'E-mail não encontrado. O acesso é criado por convite da responsável financeira.';
     if (!form.senha.value) ui.erros.senha = 'Informe sua senha.';
-    if (ui.erros.email || ui.erros.senha) { ui.erros.emailValor = form.email.value; render(); return; }
+    if (ui.erros.email || ui.erros.senha) { ui.erros.emailValor = form.email.value; ui.focar = '[aria-invalid="true"]'; render(); return; }
     usuarioId = u.id;
     try { (form.manter.checked ? localStorage : sessionStorage).setItem('coracao-usuario', u.id); } catch { /* sessão só em memória */ }
     location.hash = '#/painel';
@@ -775,14 +943,14 @@ document.addEventListener('submit', (ev) => {
   else if (form.id === 'form-pagamento') confirmarPagamento(form);
   else if (form.id === 'form-convite') {
     const nome = form.nome.value.trim(); const email = form.email.value.trim();
-    if (!nome || !/^\S+@\S+\.\S+$/.test(email)) { ui.erros = { convite: 'Informe nome e um e-mail válido.' }; render(); return; }
-    if (db.usuarios.some((u) => u.email.toLowerCase() === email.toLowerCase())) { ui.erros = { convite: 'Esse e-mail já tem acesso.' }; render(); return; }
+    if (!nome || !/^\S+@\S+\.\S+$/.test(email)) { ui.erros = { convite: 'Informe nome e um e-mail válido.' }; ui.focar = nome ? '#c-email' : '#c-nome'; render(); return; }
+    if (db.usuarios.some((u) => u.email.toLowerCase() === email.toLowerCase())) { ui.erros = { convite: 'Esse e-mail já tem acesso.' }; ui.focar = '#c-email'; render(); return; }
     ui.erros = {};
     db.usuarios.push({ id: 'u' + Date.now().toString(36), nome, email, perfil: form.perfil.value, lembretes: false });
     salvar(); toast(`Convite enviado para ${email}.`); render();
   } else if (form.id === 'form-categoria') {
     const nome = form.nome.value.trim();
-    if (!nome || db.categorias.some((c) => c.nome.toLowerCase() === nome.toLowerCase())) { ui.erros = { categoria: nome ? 'Essa categoria já existe.' : 'Informe o nome.' }; render(); return; }
+    if (!nome || db.categorias.some((c) => c.nome.toLowerCase() === nome.toLowerCase())) { ui.erros = { categoria: nome ? 'Essa categoria já existe.' : 'Informe o nome.' }; ui.focar = '#nova-cat'; render(); return; }
     ui.erros = {}; db.categorias.push({ nome, arquivada: false }); salvar(); toast('Categoria adicionada.'); render();
   }
 });
@@ -793,6 +961,8 @@ window.addEventListener('hashchange', () => {
   ui.erros = {}; ui.menu = null; ui.notif = false;
   if (r.nome !== 'config') ui.rascunhoConfig = null;
   if (r.nome !== 'conta' && r.nome !== 'painel' && r.nome !== 'contas') ui.modal = null;
+  const naAba = document.activeElement?.closest('.abas');
+  if (!ui.focar) ui.focar = naAba ? `.abas a[href="${location.hash}"]` : 'main h1';
   render();
   window.scrollTo(0, 0);
 });

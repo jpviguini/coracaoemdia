@@ -18,6 +18,16 @@ Entre com `helena@exemplo.org` (financeiro), `camila@exemplo.org` (apoio) ou `se
 - **Configurações:** lembretes, usuários (perfil e convite) e categorias.
 - **Celular:** mesma estrutura em uma coluna, com barra inferior e botão + de nova conta.
 
+## Acessibilidade
+
+Seguindo a WCAG 2.2 (nível AA) e os passos de avaliação de Ferraz (2020):
+
+- **Teclado:** contorno de foco visível em tudo; link "Pular para o conteúdo"; o foco é mantido depois de cada ação e vai para o título ao trocar de tela; janela de pagamento com foco preso e `Esc` para fechar; linhas das tabelas e campos de anexo alcançáveis pelo `Tab`; calendário navegável pelas setas.
+- **Leitores de tela:** marcos (`header`, `nav`, `main`), `aria-current`, `aria-pressed`, `aria-sort`, `aria-expanded`; erros de formulário ligados ao campo (`aria-invalid` + `aria-describedby`); avisos anunciados por uma região `aria-live`; gráfico de relatórios com tabela equivalente; dias do calendário com resumo das contas.
+- **Contraste e texto:** todas as cores de texto com contraste de pelo menos 4,5:1; fontes em `rem`; em **Configurações › Acessibilidade** dá para aumentar o texto e ligar o alto contraste.
+- **Movimento e tempo:** respeita `prefers-reduced-motion`; o aviso com "Desfazer" fica 10 s e pausa com o mouse ou o foco.
+- **Validação:** 0 violações no axe-core (WCAG 2.2 AA + boas práticas) nas telas principais, no desktop e no celular.
+
 ## Observações do protótipo
 
 - A data "de hoje" é fixa em 14/09/2026, a mesma do cenário das personas, para os dados de exemplo fazerem sentido.
