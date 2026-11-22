@@ -1,4 +1,4 @@
-import { HOJE, diasEntre, addMeses, estado, URGENCIA, prazo, parseValor, fmt, valorPago, resumoMes, proximasOcorrencias } from './logic.js';
+import { HOJE, diasEntre, addMeses, estado, URGENCIA, prazo, parseValor, fmt, valorPago, resumoMes, resumoRealizado, proximasOcorrencias } from './logic.js';
 import { seed } from './data.js';
 
 // ---------------------------------------------------------------- dados
@@ -60,7 +60,7 @@ const icone = (n, t = 20) => `<svg width="${t}" height="${t}" viewBox="0 0 24 24
 
 // ---------------------------------------------------------------- estado da interface
 const ui = {
-  lista: { tipo: 'saida', estado: 'todos', q: '', mes: mesDe(HOJE), cat: '', ordem: 'venc', dir: 1, pagina: 1 },
+  lista: { tipo: 'saida', estado: 'todos', q: '', mes: mesDe(HOJE), cat: '', ordem: 'estado', dir: 1, pagina: 1 },
   menu: null, notif: false, modal: null, toast: null, calMes: mesDe(HOJE), calDia: HOJE,
   rel: { mes: mesDe(HOJE), cat: '', modo: 'semana', todos: false }, rascunhoConfig: null, erros: {},
 };
@@ -167,8 +167,8 @@ function casca(r, conteudo) {
   <div class="app"${ui.modal ? ' inert' : ''}>
   <header class="topbar">
     <a class="logo" href="#/painel" aria-label="CorAção em Dia, ir para o painel"><span class="coracao" aria-hidden="true">♡</span><span><b>Cor</b><span class="az">Ação</span> em Dia</span></a>
-    <div class="busca" role="search">${icone('busca', 18)}<label class="sr-only" for="busca-global">Buscar contas</label>
-      <input id="busca-global" type="search" placeholder="Buscar conta, fornecedor…" value="${esc(ui.lista.q)}"></div>
+    <form id="form-busca-global" class="busca" role="search">${icone('busca', 18)}<label class="sr-only" for="busca-global">Buscar contas</label>
+      <input id="busca-global" type="search" placeholder="Buscar conta, fornecedor…" value="${esc(ui.lista.q)}"><button class="btn sm" type="submit">Buscar</button></form>
     <div class="sino" style="position:relative">
       <button class="icone-btn" data-acao="notif" aria-label="Lembretes: ${lemb.length} ${lemb.length === 1 ? 'conta precisa' : 'contas precisam'} de atenção" aria-expanded="${ui.notif}" aria-controls="painel-lembretes">${icone('sino', 18)}${lemb.length ? `<span class="badge" aria-hidden="true">${lemb.length}</span>` : ''}</button>
       ${ui.notif ? `<div class="menu notif" id="painel-lembretes" role="region" aria-label="Lembretes"><div style="padding:8px 12px;font-weight:700" aria-hidden="true">Lembretes</div>${lemb.map((c) => `<a class="item" href="#/conta/${c.id}">
@@ -191,9 +191,10 @@ function telaPainel() {
   const hoje = s.filter((c) => estado(c) === 'hoje');
   const prox = s.filter((c) => estado(c) === 'avencer' && diasEntre(HOJE, c.venc) <= 7);
   const doMes = saidas().filter((c) => mesDe(c.venc) === mesDe(HOJE));
-  const pagasMes = doMes.filter((c) => c.pagamento);
+  const faltaPagar = doMes.filter((c) => !c.pagamento);
   const soma = (l) => l.reduce((t, c) => t + c.valor, 0);
   const r = resumoMes(db.contas, mesDe(HOJE));
+  const realizado = resumoRealizado(db.contas, mesDe(HOJE));
   const pagas = saidas().filter((c) => c.pagamento && mesDe(c.venc) === mesDe(HOJE)).sort((a, b) => b.pagamento.data.localeCompare(a.pagamento.data)).slice(0, 3);
   const lista = urgentes();
   const hora = new Date().getHours();
@@ -208,25 +209,25 @@ function telaPainel() {
     ${cartao('vencida', 'Vencidas', venc, 'vencida')}
     ${cartao('hoje', 'Vencem hoje', hoje, 'hoje')}
     ${cartao('', 'Próximos 7 dias', prox, 'avencer')}
-    <button class="card stat mes" data-acao="filtrar" data-estado="todos"><span class="rot">A pagar no mês</span><span class="n" style="font-size:24px;padding:4px 0">${fmt(soma(doMes))}</span>
-      <span class="muted">${doMes.length} contas · ${pagasMes.length} já pagas</span></button>
+    <button class="card stat mes" data-acao="filtrar" data-estado="pendentes"><span class="rot">Falta pagar no mês</span><span class="n" style="font-size:24px;padding:4px 0">${fmt(soma(faltaPagar))}</span>
+      <span class="muted">${faltaPagar.length} pendentes · ${fmt(soma(doMes))} no total</span></button>
   </div>
   <div class="duas">
     <section class="card tabela"><div class="topo"><div><h2 style="display:inline">Exigem atenção</h2> <span class="small muted">ordenadas por urgência</span></div><a href="#/contas" class="small">Ver todas<span class="sr-only"> as contas</span> <span aria-hidden="true">→</span></a></div>
       ${lista.length ? `<table><caption class="sr-only">Contas que exigem atenção, ordenadas por urgência</caption><thead><tr><th scope="col">Estado</th><th scope="col">Descrição</th><th scope="col" class="esconde-cel">Vencimento</th><th scope="col" class="num">Valor</th><th scope="col"><span class="sr-only">Ação</span></th></tr></thead><tbody>
       ${lista.map((c) => `<tr data-ir="#/conta/${c.id}"><td>${tag(c)}</td><td><a class="linha-link" href="#/conta/${c.id}">${esc(c.descricao)}</a><div class="small muted so-cel">${curta(c.venc)} · ${prazo(c)}</div></td>
         <td class="esconde-cel">${curta(c.venc)} <span class="muted small">· ${prazo(c)}</span></td><td class="num">${fmt(c.valor)}</td>
-        <td class="num"><button class="btn sm" data-acao="pagar" data-id="${c.id}">Pagar<span class="sr-only"> ${esc(c.descricao)}</span></button></td></tr>`).join('')}</tbody></table>`
+        <td class="num"><button class="btn sm" data-acao="pagar" data-id="${c.id}">Registrar pagamento<span class="sr-only"> ${esc(c.descricao)}</span></button></td></tr>`).join('')}</tbody></table>`
       : '<p class="vazio">Nada urgente. Todas as contas dos próximos 7 dias estão pagas ou agendadas.</p>'}
     </section>
     <div class="pilha">
       <section class="card"><h2 style="margin-bottom:8px">Resumo de ${MESES[+HOJE.slice(5, 7) - 1].toLowerCase()}</h2>
-        <div class="kv"><span>Entradas</span><b class="verde">${fmt(r.entradas)}</b></div>
-        <div class="kv"><span>Saídas</span><b class="vermelho">${fmt(r.saidas)}</b></div>
-        <div class="kv"><b>Saldo</b><b class="azul" style="font-size:19px">${fmt(r.saldo)}</b></div>
-        <a href="#/relatorios" class="small">Ver relatório <span aria-hidden="true">→</span></a></section>
+        <div class="kv"><span>Entradas previstas</span><b class="verde">${fmt(r.entradas)}</b></div>
+        <div class="kv"><span>Saídas previstas</span><b class="vermelho">${fmt(r.saidas)}</b></div>
+        <div class="kv"><b>Saldo previsto</b><b class="azul" style="font-size:19px">${fmt(r.saldo)}</b></div>
+        <div class="kv"><span>Saldo realizado</span><b>${fmt(realizado.saldo)}</b></div><a href="#/relatorios" class="small">Ver relatório <span aria-hidden="true">→</span></a></section>
       <section class="card"><h2 style="margin-bottom:4px">Pagas recentemente</h2><div class="lista-simples">
-        ${pagas.map((c) => `<div><a href="#/conta/${c.id}" style="color:inherit;text-decoration:none"><b>${esc(c.descricao)}</b></a><span class="muted small">${curta(c.pagamento.data)} · ${fmt(c.pagamento.valor)}</span></div>`).join('') || '<p class="muted small">Nenhuma ainda.</p>'}
+        ${pagas.map((c) => `<div><a href="#/conta/${c.id}" style="color:inherit;text-decoration:none"><b>${esc(c.descricao)}</b></a><span class="muted small">Paga em ${curta(c.pagamento.data)} · ${fmt(c.pagamento.valor)}</span></div>`).join('') || '<p class="muted small">Nenhuma ainda.</p>'}
       </div></section>
     </div>
   </div>`;
@@ -237,13 +238,13 @@ function filtrarLista() {
   // busca tolerante: ignora acentos e maiúsculas ("agua" encontra "Conta de água")
   const norm = (t) => t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
   const q = norm(f.q.trim());
-  const base = db.contas.filter((c) => c.tipo === f.tipo && mesDe(c.venc) === f.mes && (!f.cat || c.categoria === f.cat)
+  const base = db.contas.filter((c) => (!f.tipo || c.tipo === f.tipo) && (!f.mes || mesDe(c.venc) === f.mes) && (!f.cat || c.categoria === f.cat)
     && (!q || norm(c.descricao).includes(q) || norm(c.fornecedor).includes(q)));
   const contagem = {};
   base.forEach((c) => { const e = estado(c); contagem[e] = (contagem[e] || 0) + 1; });
-  const linhas = f.estado === 'todos' ? base : base.filter((c) => estado(c) === f.estado);
+  const linhas = f.estado === 'todos' ? base : base.filter((c) => f.estado === 'pendentes' ? !c.pagamento : estado(c) === f.estado);
   const chave = { estado: (c) => URGENCIA[estado(c)], descricao: (c) => c.descricao.toLowerCase(), categoria: (c) => c.categoria, venc: (c) => c.venc, valor: (c) => c.valor }[f.ordem];
-  linhas.sort((a, b) => (chave(a) > chave(b) ? 1 : chave(a) < chave(b) ? -1 : 0) * f.dir);
+  linhas.sort((a, b) => (chave(a) > chave(b) ? 1 : chave(a) < chave(b) ? -1 : 0) * f.dir || a.venc.localeCompare(b.venc));
   return { base, linhas, contagem };
 }
 
@@ -256,28 +257,30 @@ function telaContas() {
   const pagina = linhas.slice((f.pagina - 1) * POR_PAGINA, f.pagina * POR_PAGINA);
   const total = linhas.reduce((t, c) => t + valorPago(c), 0);
   const abas = f.tipo === 'saida'
-    ? [['todos', 'Todas'], ['vencida', 'Vencidas'], ['hoje', 'Vence hoje'], ['avencer', 'A vencer'], ['agendada', 'Agendadas'], ['paga', 'Pagas']]
-    : [['todos', 'Todas'], ['prevista', 'Previstas'], ['recebida', 'Recebidas']];
+    ? [['todos', 'Todas'], ['pendentes', 'Pendentes'], ['vencida', 'Vencidas'], ['hoje', 'Vence hoje'], ['avencer', 'A vencer'], ['agendada', 'Agendadas'], ['paga', 'Pagas']]
+    : f.tipo ? [['todos', 'Todas'], ['prevista', 'Previstas'], ['recebida', 'Recebidas']] : [['todos', 'Todas']];
+  const periodo = f.mes ? nomeMes(f.mes) : 'Todos os meses';
   const th = (campo, nome, cls = '') => `<th scope="col" class="${cls}"${f.ordem === campo ? ` aria-sort="${f.dir > 0 ? 'ascending' : 'descending'}"` : ''}><button data-acao="ordenar" data-campo="${campo}" class="${f.ordem === campo ? 'on' : ''}">${nome} <span aria-hidden="true">${f.ordem === campo ? (f.dir > 0 ? '↓' : '↑') : '↕'}</span><span class="sr-only">, ordenar</span></button></th>`;
   return `
   <div class="cab"><h1 class="titulo">Contas</h1><a class="btn pri novo" href="#/nova${f.tipo === 'entrada' ? '?tipo=entrada' : ''}">+ ${f.tipo === 'entrada' ? 'Nova entrada' : 'Nova conta'}</a></div>
   <div style="margin-bottom:14px" class="seg" role="group" aria-label="Tipo de conta">
-    <button class="${f.tipo === 'saida' ? 'on' : ''}" aria-pressed="${f.tipo === 'saida'}" data-acao="tipo-lista" data-tipo="saida">A pagar</button>
-    <button class="${f.tipo === 'entrada' ? 'on' : ''}" aria-pressed="${f.tipo === 'entrada'}" data-acao="tipo-lista" data-tipo="entrada">A receber</button></div>
-  <div class="abas" role="group" aria-label="Filtrar por estado">${abas.map(([id, nome]) => `<button class="${f.estado === id ? 'on' : ''}" aria-pressed="${f.estado === id}" data-acao="aba-estado" data-estado="${id}">${nome} (${id === 'todos' ? base.length : contagem[id] || 0})</button>`).join('')}</div>
+    <button class="${!f.tipo ? 'on' : ''}" aria-pressed="${!f.tipo}" data-acao="tipo-lista" data-tipo="">Todos os tipos</button>
+    <button class="${f.tipo === 'saida' ? 'on' : ''}" aria-pressed="${f.tipo === 'saida'}" data-acao="tipo-lista" data-tipo="saida">Saídas</button>
+    <button class="${f.tipo === 'entrada' ? 'on' : ''}" aria-pressed="${f.tipo === 'entrada'}" data-acao="tipo-lista" data-tipo="entrada">Entradas</button></div>
+  <div class="abas" role="group" aria-label="Filtrar por estado">${abas.map(([id, nome]) => `<button class="${f.estado === id ? 'on' : ''}" aria-pressed="${f.estado === id}" data-acao="aba-estado" data-estado="${id}">${nome} (${id === 'todos' ? base.length : id === 'pendentes' ? base.filter((c) => !c.pagamento).length : contagem[id] || 0})</button>`).join('')}</div>
   <div class="filtros">
     <div class="busca-lista"><label class="sr-only" for="busca-lista">Buscar por descrição ou fornecedor</label><input id="busca-lista" type="search" placeholder="Buscar por descrição ou fornecedor…" value="${esc(f.q)}"></div>
-    <div class="mes-sel">${botoesMes('mes-lista', f.mes)}</div>
+    <div class="mes-sel">${f.mes ? botoesMes('mes-lista', f.mes) : '<span>Todos os meses</span><button class="btn sm" data-acao="mes-atual">Mês atual</button>'}</div>
     <label class="sr-only" for="cat-lista">Filtrar por categoria</label>
     <select id="cat-lista" style="width:220px"><option value="">Categoria: todas</option>${categoriasAtivas().map((c) => `<option ${f.cat === c ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select>
   </div>
   <section class="card tabela">
-    ${pagina.length ? `<table><caption class="sr-only">Contas de ${nomeMes(f.mes)}</caption><thead><tr>${th('estado', 'Estado')}${th('descricao', 'Descrição')}${th('categoria', 'Categoria', 'esconde-cel')}${th('venc', 'Vencimento', 'esconde-cel')}${th('valor', 'Valor', 'num')}<th scope="col" class="esconde-cel">Anexo</th><th scope="col"><span class="sr-only">Ações</span></th></tr></thead><tbody>
+    ${pagina.length ? `<table><caption class="sr-only">Contas · ${periodo}</caption><thead><tr>${th('estado', 'Estado')}${th('descricao', 'Descrição')}${th('categoria', 'Categoria', 'esconde-cel')}${th('venc', 'Vencimento', 'esconde-cel')}${th('valor', 'Valor', 'num')}<th scope="col" class="esconde-cel">Anexo</th><th scope="col"><span class="sr-only">Ações</span></th></tr></thead><tbody>
     ${pagina.map((c) => `<tr data-ir="#/conta/${c.id}"><td>${tag(c)}</td><td><a class="linha-link" href="#/conta/${c.id}">${esc(c.descricao)}</a><div class="small muted so-cel">${dataBR(c.venc)}</div></td>
       <td class="esconde-cel">${esc(c.categoria)}</td><td class="esconde-cel">${dataBR(c.venc)}</td><td class="num">${fmt(valorPago(c))}</td>
       <td class="esconde-cel">${c.anexos.length ? '<span class="arq">PDF</span>' : '<span class="muted" aria-label="sem anexo">—</span>'}</td>
       <td class="num"><div class="menu-linha"><button data-acao="menu" data-id="${c.id}" aria-label="Ações de ${esc(c.descricao)}" aria-haspopup="true" aria-expanded="${ui.menu === c.id}"><span aria-hidden="true">⋯</span></button>${ui.menu === c.id ? menuLinha(c) : ''}</div></td></tr>`).join('')}
-    </tbody></table>` : `<p class="vazio">Nenhuma conta encontrada com esses filtros.</p>`}
+    </tbody></table>` : `<p class="vazio">${f.q || f.cat || f.estado !== 'todos' ? 'Nenhuma conta encontrada com esses filtros.' : 'Nenhuma conta em ' + periodo.toLowerCase() + '.'}</p>`}
     <div class="topo" style="border-top:1px solid var(--borda)"><div><b>Total filtrado: ${fmt(total)}</b> <span class="muted small">· ${linhas.length} de ${base.length} contas</span></div>
       <div style="display:flex;gap:8px;align-items:center"><span class="small muted">Página ${f.pagina} de ${paginas}</span>
       <button class="btn sm" data-acao="pagina" data-delta="-1" ${f.pagina <= 1 ? 'disabled' : ''}><span aria-hidden="true">‹</span> Anterior<span class="sr-only"> página</span></button>
@@ -571,12 +574,12 @@ function dadosRelatorio() {
   const { mes, cat } = ui.rel;
   const doMes = db.contas.filter((c) => mesDe(c.venc) === mes && (!cat || c.categoria === cat)).sort((a, b) => b.venc.localeCompare(a.venc));
   const r = resumoMes(doMes, mes);
-  return { doMes, r };
+  return { doMes, r, realizado: resumoRealizado(db.contas.filter((c) => !cat || c.categoria === cat), mes) };
 }
 
 function telaRelatorios() {
   const { mes, cat, modo, todos } = ui.rel;
-  const { doMes, r } = dadosRelatorio();
+  const { doMes, r, realizado } = dadosRelatorio();
   let grupos;
   if (modo === 'semana') {
     const fim = new Date(+mes.slice(0, 4), +mes.slice(5, 7), 0).getDate();
@@ -602,12 +605,17 @@ function telaRelatorios() {
     <label class="sr-only" for="cat-rel">Filtrar por categoria</label><select id="cat-rel" style="width:210px" class="nao-imprime"><option value="">Todas as categorias</option>${categoriasAtivas().map((c) => `<option ${cat === c ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select></div>
     <div class="acoes nao-imprime"><button class="btn" data-acao="exportar-planilha">Exportar planilha</button><button class="btn pri" data-acao="exportar-pdf">Exportar PDF</button></div></div>
   <div class="grid-3">
-    <div class="card"><span class="muted">Entradas <span aria-hidden="true">↑</span></span><div class="grande verde">${fmt(r.entradas)}</div></div>
-    <div class="card"><span class="muted">Saídas <span aria-hidden="true">↓</span></span><div class="grande vermelho">${fmt(r.saidas)}</div></div>
-    <div class="card" style="border:2px solid var(--azul)"><span class="muted">Saldo do mês</span><div class="grande azul">${fmt(r.saldo)}</div></div>
+    <div class="card"><span class="muted">Entradas previstas <span aria-hidden="true">↑</span></span><div class="grande verde">${fmt(r.entradas)}</div></div>
+    <div class="card"><span class="muted">Saídas previstas <span aria-hidden="true">↓</span></span><div class="grande vermelho">${fmt(r.saidas)}</div></div>
+    <div class="card" style="border:2px solid var(--azul)"><span class="muted">Saldo previsto</span><div class="grande azul">${fmt(r.saldo)}</div></div>
   </div>
+  <section class="card" style="margin-bottom:20px"><h2>Realizado no mês</h2>
+    <div class="kv"><span>Recebido</span><b>${fmt(realizado.entradas)}</b></div>
+    <div class="kv"><span>Pago</span><b>${fmt(realizado.saidas)}</b></div>
+    <div class="kv"><span>Saldo realizado</span><b>${fmt(realizado.saldo)}</b></div>
+  </section>
   <div class="duas-igual" style="margin-bottom:20px">
-    <section class="card"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px"><h2>Entradas e saídas</h2>
+    <section class="card"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px"><h2>Entradas e saídas previstas</h2>
       <div class="seg nao-imprime" role="group" aria-label="Agrupar gráfico"><button class="${modo === 'semana' ? 'on' : ''}" aria-pressed="${modo === 'semana'}" data-acao="modo-rel" data-modo="semana">Por semana</button><button class="${modo === 'meses' ? 'on' : ''}" aria-pressed="${modo === 'meses'}" data-acao="modo-rel" data-modo="meses">Últimos 6 meses</button></div></div>
       <div class="legenda" aria-hidden="true" style="margin-bottom:10px"><span><i style="background:var(--paga)"></i>Entradas</span><span><i style="background:var(--vencida)"></i>Saídas</span></div>
       <!-- o gráfico é só visual; os mesmos números estão na tabela logo abaixo (alternativa textual, WCAG 1.1.1) -->
@@ -781,9 +789,10 @@ document.addEventListener('click', (ev) => {
       usuarioId = null; ui.modal = null; location.hash = '#/login'; break;
     case 'notif': ui.notif = !ui.notif; if (ui.notif) ui.focar = lembretesAtivos().length ? '#painel-lembretes .item' : '#painel-lembretes'; break;
     case 'ir': location.hash = alvo.dataset.hash; return;
-    case 'filtrar': Object.assign(f, { tipo: 'saida', estado: alvo.dataset.estado, q: '', cat: '', mes: mesDe(HOJE), pagina: 1, ordem: 'venc', dir: 1 }); ir('#/contas'); return;
+    case 'filtrar': Object.assign(f, { tipo: 'saida', estado: alvo.dataset.estado, q: '', cat: '', mes: mesDe(HOJE), pagina: 1, ordem: 'estado', dir: 1 }); ir('#/contas'); return;
     case 'tipo-lista': Object.assign(f, { tipo: alvo.dataset.tipo, estado: 'todos', pagina: 1 }); aviso = avisoLista; break;
     case 'aba-estado': Object.assign(f, { estado: alvo.dataset.estado, pagina: 1 }); aviso = avisoLista; break;
+    case 'mes-atual': f.mes = mesDe(HOJE); f.pagina = 1; aviso = avisoLista; break;
     case 'mes-lista': f.mes = mudarMes(f.mes, +alvo.dataset.delta); f.pagina = 1; aviso = () => `${nomeMes(f.mes)}. ${avisoLista()}`; break;
     case 'ordenar': f.dir = f.ordem === alvo.dataset.campo ? -f.dir : 1; f.ordem = alvo.dataset.campo; aviso = () => `Ordenado por ${alvo.textContent.replace(/[↓↑↕]|, ordenar/g, '').trim().toLowerCase()}, ${f.dir > 0 ? 'crescente' : 'decrescente'}.`; break;
     case 'pagina': f.pagina += +alvo.dataset.delta; aviso = () => `Página ${f.pagina}.`; break;
@@ -918,10 +927,7 @@ document.addEventListener('keydown', (ev) => {
       if (mudouMes) anunciar(`Calendário de ${nomeMes(ui.calMes)}.`);
     }
   }
-  if (ev.key === 'Enter' && ev.target.id === 'busca-global') {
-    Object.assign(ui.lista, { q: ev.target.value, estado: 'todos', pagina: 1 });
-    ir('#/contas');
-  }
+
 });
 
 document.addEventListener('submit', (ev) => {
@@ -939,6 +945,10 @@ document.addEventListener('submit', (ev) => {
     try { (form.manter.checked ? localStorage : sessionStorage).setItem('coracao-usuario', u.id); } catch { /* sessão só em memória */ }
     location.hash = '#/painel';
     render();
+  } else if (form.id === 'form-busca-global') {
+    Object.assign(ui.lista, { q: $('#busca-global').value.trim(), tipo: '', mes: '', cat: '', estado: 'todos', pagina: 1 });
+    ui.focar = '#busca-lista';
+    ir('#/contas');
   } else if (form.id === 'form-conta') salvarConta(form);
   else if (form.id === 'form-pagamento') confirmarPagamento(form);
   else if (form.id === 'form-convite') {

@@ -58,6 +58,13 @@ export function resumoMes(contas, ym) {
   return { entradas, saidas, saldo: entradas - saidas };
 }
 
+export function resumoRealizado(contas, ym) {
+  const pagosNoMes = contas.filter((c) => c.pagamento?.data.startsWith(ym));
+  const entradas = pagosNoMes.filter((c) => c.tipo === 'entrada').reduce((s, c) => s + c.pagamento.valor, 0);
+  const saidas = pagosNoMes.filter((c) => c.tipo === 'saida').reduce((s, c) => s + c.pagamento.valor, 0);
+  return { entradas, saidas, saldo: entradas - saidas };
+}
+
 // Ocorrências futuras de uma conta recorrente (RF04/RF08).
 export function proximasOcorrencias(venc, repetir, n = 3) {
   const passo = { semanal: (d, i) => addDias(d, 7 * i), mensal: (d, i) => addMeses(d, i), anual: (d, i) => addMeses(d, 12 * i) }[repetir];
