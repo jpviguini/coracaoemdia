@@ -214,10 +214,10 @@ function telaPainel() {
   </div>
   <div class="duas">
     <section class="card tabela"><div class="topo"><div><h2 style="display:inline">Exigem atenção</h2> <span class="small muted">ordenadas por urgência</span></div><a href="#/contas" class="small">Ver todas<span class="sr-only"> as contas</span> <span aria-hidden="true">→</span></a></div>
-      ${lista.length ? `<table><caption class="sr-only">Contas que exigem atenção, ordenadas por urgência</caption><thead><tr><th scope="col">Estado</th><th scope="col">Descrição</th><th scope="col" class="esconde-cel">Vencimento</th><th scope="col" class="num">Valor</th><th scope="col"><span class="sr-only">Ação</span></th></tr></thead><tbody>
-      ${lista.map((c) => `<tr data-ir="#/conta/${c.id}"><td>${tag(c)}</td><td><a class="linha-link" href="#/conta/${c.id}">${esc(c.descricao)}</a><div class="small muted so-cel">${curta(c.venc)} · ${prazo(c)}</div></td>
-        <td class="esconde-cel">${curta(c.venc)} <span class="muted small">· ${prazo(c)}</span></td><td class="num">${fmt(c.valor)}</td>
-        <td class="num"><button class="btn sm" data-acao="pagar" data-id="${c.id}">Registrar pagamento<span class="sr-only"> ${esc(c.descricao)}</span></button></td></tr>`).join('')}</tbody></table>`
+      ${lista.length ? `<table class="tabela-urgentes" role="table"><caption class="sr-only">Contas que exigem atenção, ordenadas por urgência</caption><thead><tr><th scope="col">Estado</th><th scope="col">Descrição</th><th scope="col" class="esconde-cel">Vencimento</th><th scope="col" class="num">Valor</th><th scope="col"><span class="sr-only">Ação</span></th></tr></thead><tbody role="rowgroup">
+      ${lista.map((c) => `<tr role="row" data-ir="#/conta/${c.id}"><td role="cell">${tag(c)}</td><td role="cell"><a class="linha-link" href="#/conta/${c.id}">${esc(c.descricao)}</a><div class="small muted so-cel">${curta(c.venc)} · ${prazo(c)}</div></td>
+        <td role="cell" class="esconde-cel">${curta(c.venc)} <span class="muted small">· ${prazo(c)}</span></td><td role="cell" class="num">${fmt(c.valor)}</td>
+        <td role="cell" class="num"><button class="btn sm" data-acao="pagar" data-id="${c.id}">Registrar pagamento<span class="sr-only"> ${esc(c.descricao)}</span></button></td></tr>`).join('')}</tbody></table>`
       : '<p class="vazio">Nada urgente. Todas as contas dos próximos 7 dias estão pagas ou agendadas.</p>'}
     </section>
     <div class="pilha">
