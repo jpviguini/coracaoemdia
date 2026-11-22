@@ -587,7 +587,7 @@ function telaCalendario() {
     const resumo = [rotulo, data, ...itens.map((m) => m.descricao)].join(', ');
     return `<button data-acao="dia" data-dia="${iso}" tabindex="${iso === sel ? 0 : -1}" aria-pressed="${iso === sel}"${iso === HOJE ? ' aria-current="date"' : ''} class="${mesDe(iso) !== ym ? 'fora' : ''} ${iso === sel ? 'sel' : ''} ${iso === HOJE ? 'hoje-dia' : ''}" aria-label="${resumo}">
       <span class="d" aria-hidden="true">${dia}</span>
-      ${itens.map((m) => `<span class="pilula" aria-hidden="true" style="background:var(--${m.cor})">${m.texto}</span>`).join('')}</button>`;
+      ${itens.map((m) => `<span class="pilula" aria-hidden="true" style="background:var(--${m.cor})">${m.texto}</span>`).join(' ')}</button>`;
   };
   const sel = ui.calDia;
   const lista = doDia(sel);
@@ -869,7 +869,7 @@ document.addEventListener('click', async (ev) => {
     case 'abrir-anexo': toast(`No protótipo os arquivos não são guardados de verdade (${alvo.dataset.nome}).`); break;
     case 'cancelar-conta': {
       const v = lerForm($('#form-conta'));
-      const preenchido = v.descricao || v.valor || v.obs || v.fornecedor || v.anexo;
+      const preenchido = v.descricao || v.valor || v.venc || v.categoria || v.obs || v.fornecedor || v.anexo;
       if (preenchido && !confirm('Descartar as informações do formulário?')) return;
       ir(alvo.getAttribute('href')); return;
     }
