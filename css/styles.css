@@ -294,3 +294,29 @@ dialog.modal {
   color: var(--texto);
 }
 dialog.modal::backdrop { background: rgba(15, 23, 32, .5); }
+
+.toast { flex-wrap: wrap; }
+.toast button:focus-visible { outline-color: #fff; }
+.dica-cal { margin: 8px 0; }
+.cal { grid-template-columns: repeat(7, minmax(0, 1fr)); }
+.cal button:focus-visible { outline-offset: -3px; }
+.cal .pilula { max-width: 100%; overflow-wrap: anywhere; }
+
+@media (max-width: 860px) {
+  .app, .duas, .duas.larga-400, .duas.larga-440, .duas-igual, .linha, .grid-3 { grid-template-columns: minmax(0, 1fr); }
+  .grid-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .tabela table { table-layout: fixed; }
+  .tabela td, .tabela th { padding-inline: 5px; overflow-wrap: anywhere; white-space: normal; }
+  .tabela .btn { white-space: normal; padding-inline: 5px; }
+  .tabela .tag { white-space: normal; padding-inline: 5px; }
+  .tabela .num:last-child .menu { right: 0; max-width: calc(100vw - 40px); }
+  .seg, .abas { flex-wrap: wrap; max-width: 100%; overflow: visible; }
+  .seg button, .abas button, .abas a { padding-inline: 8px; white-space: normal; }
+  .cal .hd { padding-inline: 0; }
+  .cal button { padding-inline: 2px; }
+  .cal .pilula { padding-inline: 2px; }
+  .barras .g { min-width: 0; flex: 1; }
+  .barras .b { min-width: 0; }
+  .rotulos { flex-wrap: wrap; gap: 4px; }
+  .dados-grafico { overflow-x: auto; }
+}

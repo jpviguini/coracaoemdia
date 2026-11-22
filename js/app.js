@@ -65,10 +65,10 @@ const ui = {
   rel: { mes: mesDe(HOJE), cat: '', modo: 'semana', todos: false }, rascunhoConfig: null, erros: {},
 };
 let timerToast;
-const tempoToast = () => (ui.toast?.desfazer ? 10000 : 6000);
 function iniciarTimerToast() {
   clearTimeout(timerToast);
-  timerToast = setTimeout(() => { ui.toast = null; $('.toast')?.remove(); }, tempoToast()); // sem render: não apaga o que estiver sendo digitado
+  if (ui.toast?.desfazer) return;
+  timerToast = setTimeout(() => { ui.toast = null; $('.toast')?.remove(); }, 6000); // sem render: não apaga o que estiver sendo digitado
 }
 function toast(texto, desfazer) {
   ui.toast = { texto, desfazer };
@@ -162,8 +162,8 @@ function casca(r, conteudo) {
   const lemb = lembretesAtivos();
   const atual = (id) => (ativa === id ? ' aria-current="page"' : '');
   const nav = areas.map(([id, nome]) => `<a class="nav ${ativa === id ? 'on' : ''}" href="#/${id}"${atual(id)}>${icone(id)}${nome}</a>`).join('');
-  const navCel = areas.map(([id, nome]) => `<a class="${ativa === id ? 'on' : ''}" href="#/${id}"${atual(id)}>${icone(id, 22)}${id === 'config' ? 'Mais' : nome}</a>`).join('');
-  return `<a class="pular" href="#conteudo" data-acao="pular">Pular para o conteúdo</a>
+  const navCel = areas.map(([id, nome]) => `<a class="${ativa === id ? 'on' : ''}" href="#/${id}"${atual(id)}>${icone(id, 22)}${id === 'config' ? 'Ajustes' : nome}</a>`).join('');
+  return `${ui.modal ? '' : '<a class="pular" href="#conteudo" data-acao="pular">Pular para o conteúdo</a>'}
   <div class="app"${ui.modal ? ' inert' : ''}>
   <header class="topbar">
     <a class="logo" href="#/painel" aria-label="CorAção em Dia, ir para o painel"><span class="coracao" aria-hidden="true">♡</span><span><b>Cor</b><span class="az">Ação</span> em Dia</span></a>
@@ -278,8 +278,8 @@ function telaContas() {
     ${pagina.length ? `<table><caption class="sr-only">Contas · ${periodo}</caption><thead><tr>${th('estado', 'Estado')}${th('descricao', 'Descrição')}${th('categoria', 'Categoria', 'esconde-cel')}${th('venc', 'Vencimento', 'esconde-cel')}${th('valor', 'Valor', 'num')}<th scope="col" class="esconde-cel">Anexo</th><th scope="col"><span class="sr-only">Ações</span></th></tr></thead><tbody>
     ${pagina.map((c) => `<tr data-ir="#/conta/${c.id}"><td>${tag(c)}</td><td><a class="linha-link" href="#/conta/${c.id}">${esc(c.descricao)}</a><div class="small muted so-cel">${dataBR(c.venc)}</div></td>
       <td class="esconde-cel">${esc(c.categoria)}</td><td class="esconde-cel">${dataBR(c.venc)}</td><td class="num">${fmt(valorPago(c))}</td>
-      <td class="esconde-cel">${c.anexos.length ? '<span class="arq">PDF</span>' : '<span class="muted" aria-label="sem anexo">—</span>'}</td>
-      <td class="num"><div class="menu-linha"><button data-acao="menu" data-id="${c.id}" aria-label="Ações de ${esc(c.descricao)}" aria-haspopup="true" aria-expanded="${ui.menu === c.id}"><span aria-hidden="true">⋯</span></button>${ui.menu === c.id ? menuLinha(c) : ''}</div></td></tr>`).join('')}
+      <td class="esconde-cel">${c.anexos.length ? '<span class="arq">PDF</span>' : '<span class="muted small">Sem anexo</span>'}</td>
+      <td class="num"><div class="menu-linha"><button data-acao="menu" data-id="${c.id}" aria-label="Ações de ${esc(c.descricao)}" aria-expanded="${ui.menu === c.id}" ${ui.menu === c.id ? 'aria-controls="acoes-' + c.id + '"' : ''}><span aria-hidden="true">⋯</span></button>${ui.menu === c.id ? menuLinha(c) : ''}</div></td></tr>`).join('')}
     </tbody></table>` : `<p class="vazio">${f.q || f.cat || f.estado !== 'todos' ? 'Nenhuma conta encontrada com esses filtros.' : 'Nenhuma conta em ' + periodo.toLowerCase() + '.'}</p>`}
     <div class="topo" style="border-top:1px solid var(--borda)"><div><b>Total filtrado: ${fmt(total)}</b> <span class="muted small">· ${linhas.length} de ${base.length} contas</span></div>
       <div style="display:flex;gap:8px;align-items:center"><span class="small muted">Página ${f.pagina} de ${paginas}</span>
@@ -291,7 +291,7 @@ function telaContas() {
 function menuLinha(c) {
   const e = estado(c);
   const aberto = !c.pagamento;
-  return `<div class="menu">
+  return `<div class="menu" id="acoes-${c.id}">
     <button data-acao="ir" data-hash="#/conta/${c.id}">Ver detalhes</button>
     <button data-acao="ir" data-hash="#/editar/${c.id}">Editar</button>
     ${aberto ? `<button data-acao="pagar" data-id="${c.id}"><b>${c.tipo === 'entrada' ? 'Registrar recebimento' : 'Registrar pagamento'}</b></button>` : `<button data-acao="desfazer-pagamento" data-id="${c.id}">Desfazer ${c.tipo === 'entrada' ? 'recebimento' : 'pagamento'}</button>`}
@@ -502,7 +502,7 @@ function modalPagamento() {
     <div class="cab"><h2 id="t-pag" style="font-size:21px;color:var(--azul)">${entrada ? 'Registrar recebimento' : 'Registrar pagamento'}</h2><button type="button" class="fechar" data-acao="fechar-modal" aria-label="Fechar janela"><span aria-hidden="true">×</span></button></div>
     <div class="resumo-conta" id="d-pag"><span>${esc(c.descricao)} · ${entrada ? 'prev.' : 'venc.'} ${dataBR(c.venc)}</span><b>${fmt(c.valor)}</b></div>
     <div class="linha">
-      <div class="campo"><label for="p-data">Data ${entrada ? 'do recebimento' : 'do pagamento'} ${estrela}</label><input id="p-data" name="data" type="date" required value="${m.data || HOJE}"></div>
+      <div class="campo ${m.erroData ? 'erro' : ''}"><label for="p-data">Data ${entrada ? 'do recebimento' : 'do pagamento'} ${estrela}</label><input id="p-data" name="data" type="date" required value="${m.data ?? HOJE}">${m.erroData ? '<span class="msg-erro">Informe a data.</span>' : ''}</div>
       <div class="campo ${m.erroValor ? 'erro' : ''}"><label for="p-valor">Valor ${entrada ? 'recebido' : 'pago'} ${estrela}</label><input id="p-valor" name="valor" type="text" inputmode="decimal" required ${m.multa ? '' : 'aria-describedby="dica-valor"'} value="${esc(m.valor ?? (c.valor / 100).toLocaleString('pt-BR', { minimumFractionDigits: 2 }))}" ${m.multa ? '' : 'readonly'}>${m.erroValor ? '<span class="msg-erro">Valor inválido.</span>' : ''}${m.multa ? '' : '<span class="sr-only" id="dica-valor">Somente leitura. Marque a opção de multa ou juros para mudar o valor.</span>'}</div>
     </div>
     ${entrada ? '' : `<label class="check"><input type="checkbox" name="multa" data-acao="multa" ${m.multa ? 'checked' : ''}> Houve multa ou juros (ajustar o valor pago)</label>`}
@@ -514,7 +514,7 @@ function modalPagamento() {
     <p class="small muted">O ${entrada ? 'recebimento' : 'pagamento'} ficará registrado em nome de ${esc(usuario().nome)}.</p>
     <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
       ${entrada ? '<span></span>' : `<button type="button" class="link small" data-acao="agendar" data-id="${c.id}">Só marcar como agendada</button>`}
-      <div class="acoes"><button type="button" class="btn" data-acao="fechar-modal">Cancelar</button><button class="btn pri">Confirmar</button></div></div>
+      <div class="acoes"><button type="button" class="btn" data-acao="fechar-modal">Cancelar</button><button class="btn pri">${entrada ? 'Registrar recebimento' : 'Registrar pagamento'}</button></div></div>
   </form></div></div>`;
 }
 
@@ -524,8 +524,8 @@ function confirmarPagamento(form) {
   const valor = parseValor(d.get('valor'));
   const arquivo = ['comprovante', 'comprovante-foto', 'comprovante-cel'].map((n) => d.get(n)).find((f) => f && f.name);
   Object.assign(ui.modal, { data: d.get('data'), valor: d.get('valor'), forma: d.get('forma'), obs: d.get('obs'), multa: !!d.get('multa'),
-    comprovante: arquivo ? arquivo.name : ui.modal.comprovante, erroValor: !(valor > 0), erroForma: !d.get('forma') });
-  if (ui.modal.erroValor || ui.modal.erroForma || !ui.modal.data) { ui.focar = '#form-pagamento [aria-invalid="true"]'; render(); return; }
+    comprovante: arquivo ? arquivo.name : ui.modal.comprovante, erroValor: !(valor > 0), erroForma: !d.get('forma'), erroData: !d.get('data') });
+  if (ui.modal.erroValor || ui.modal.erroForma || ui.modal.erroData) { ui.focar = '#form-pagamento [aria-invalid="true"]'; render(); return; }
   const m = ui.modal;
   c.pagamento = { data: m.data, valor, forma: m.forma, por: usuario().nome, comprovante: m.comprovante || null, multa: m.multa, obs: m.obs };
   if (m.comprovante && !c.anexos.includes(m.comprovante)) c.anexos.push(m.comprovante);
@@ -560,30 +560,34 @@ function telaCalendario() {
     const dt = new Date(y, mo - 1, 1 - inicio + i, 12).toISOString().slice(0, 10);
     celulas.push(dt);
   }
-  const doDia = (iso) => db.contas.filter((c) => c.venc === iso && c.tipo === 'saida');
-  const cor = { vencida: 'var(--vencida)', hoje: 'var(--hoje)', avencer: 'var(--avencer)', agendada: 'var(--agendada)' };
-  const pilulas = (iso) => {
-    const l = doDia(iso);
-    const abertas = l.filter((c) => !c.pagamento).sort((a, b) => URGENCIA[estado(a)] - URGENCIA[estado(b)]);
-    const pagas = l.length - abertas.length;
-    return (abertas.length ? `<span class="pilula" aria-hidden="true" style="background:${cor[estado(abertas[0])]}">${abertas.length}<span class="pil-txt"> ${abertas.length > 1 ? 'contas' : 'conta'}</span></span>` : '')
-      + (pagas ? `<span class="pilula" aria-hidden="true" style="background:var(--paga)">✓ ${pagas}<span class="pil-txt"> paga${pagas > 1 ? 's' : ''}</span></span>` : '');
+  const doDia = (iso) => db.contas.filter((c) => c.venc === iso);
+  const estados = {
+    vencida: ['Venc.', 'Vencida', 'vencida'], hoje: ['Hoje', 'Vence hoje', 'hoje'],
+    avencer: ['A venc.', 'A vencer', 'avencer'], agendada: ['Ag.', 'Agendada', 'agendada'],
+    paga: ['Paga', 'Paga', 'paga'], prevista: ['Ent.', 'Entrada prevista', 'agendada'],
+    recebida: ['Rec.', 'Recebida', 'paga'],
   };
-  const resumoDia = (iso) => {
-    const l = doDia(iso);
-    const partes = [`${+iso.slice(8)} de ${MESES[+iso.slice(5, 7) - 1].toLowerCase()}, ${diaSemana(iso)}`];
-    if (mesDe(iso) !== ym) return partes[0] + `, ${iso < ym ? 'mês anterior' : 'próximo mês'}`;
-    if (iso === HOJE) partes.push('hoje');
-    const abertas = l.filter((c) => !c.pagamento);
-    if (abertas.length) {
-      const porEstado = {};
-      abertas.forEach((c) => { const e = ROTULO[estado(c)].toLowerCase(); porEstado[e] = (porEstado[e] || 0) + 1; });
-      partes.push(`${abertas.length} ${abertas.length > 1 ? 'contas' : 'conta'} em aberto (${Object.entries(porEstado).map(([e, n]) => `${n} ${e}`).join(', ')})`);
+  const marcadores = (iso) => {
+    if (mesDe(iso) !== ym) return [];
+    const totais = {};
+    for (const c of doDia(iso)) {
+      const e = estado(c);
+      totais[e] = (totais[e] || 0) + 1;
     }
-    const pagas = l.length - abertas.length;
-    if (pagas) partes.push(`${pagas} paga${pagas > 1 ? 's' : ''}`);
-    if (!l.length) partes.push('sem contas');
-    return partes.join(', ');
+    return Object.entries(totais).map(([e, qtd]) => {
+      const [sigla, rotulo, cor] = estados[e];
+      return { texto: qtd + ' ' + sigla, descricao: rotulo + ': ' + qtd, cor };
+    });
+  };
+  const renderDia = (iso, sel) => {
+    const dia = Number(iso.slice(8));
+    const itens = marcadores(iso);
+    const rotulo = [dia, ...itens.map((m) => m.texto)].join(' ');
+    const data = dia + ' de ' + MESES[+iso.slice(5, 7) - 1].toLowerCase() + ', ' + diaSemana(iso);
+    const resumo = [rotulo, data, ...itens.map((m) => m.descricao)].join(', ');
+    return `<button data-acao="dia" data-dia="${iso}" tabindex="${iso === sel ? 0 : -1}" aria-pressed="${iso === sel}"${iso === HOJE ? ' aria-current="date"' : ''} class="${mesDe(iso) !== ym ? 'fora' : ''} ${iso === sel ? 'sel' : ''} ${iso === HOJE ? 'hoje-dia' : ''}" aria-label="${resumo}">
+      <span class="d" aria-hidden="true">${dia}</span>
+      ${itens.map((m) => `<span class="pilula" aria-hidden="true" style="background:var(--${m.cor})">${m.texto}</span>`).join('')}</button>`;
   };
   const sel = ui.calDia;
   const lista = doDia(sel);
@@ -594,12 +598,11 @@ function telaCalendario() {
     <div><div style="display:flex;gap:8px;align-items:center;margin-bottom:12px">
       <div class="mes-sel">${botoesMes('mes-cal', ym)}</div>
       <button class="btn sm" data-acao="cal-hoje">Hoje</button></div>
-      <p class="sr-only" id="dica-cal">Use as setas do teclado para mudar de dia, Page Up e Page Down para mudar de mês.</p>
+      <p class="small muted dica-cal" id="dica-cal">Use as setas do teclado para mudar de dia, Page Up e Page Down para mudar de mês.</p>
       <!-- só o dia selecionado entra no Tab; as setas movem entre os dias (padrão de grade do WAI-ARIA) -->
       <div class="cal" role="group" aria-label="Calendário de ${nomeMes(ym)}" aria-describedby="dica-cal">${['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'].map((d) => `<div class="hd" aria-hidden="true">${d}</div>`).join('')}
-        ${celulas.map((iso) => `<button data-acao="dia" data-dia="${iso}" tabindex="${iso === sel ? 0 : -1}" aria-pressed="${iso === sel}"${iso === HOJE ? ' aria-current="date"' : ''} class="${mesDe(iso) !== ym ? 'fora' : ''} ${iso === sel ? 'sel' : ''} ${iso === HOJE ? 'hoje-dia' : ''}" aria-label="${resumoDia(iso)}">
-          <span class="d" aria-hidden="true">${+iso.slice(8)}</span>${mesDe(iso) === ym ? pilulas(iso) : ''}</button>`).join('')}</div>
-      <div class="legenda" aria-hidden="true" style="margin-top:10px"><span><i style="background:var(--vencida)"></i>vencida</span><span><i style="background:var(--hoje)"></i>vence hoje</span><span><i style="background:var(--avencer)"></i>a vencer</span><span><i style="background:var(--agendada)"></i>agendada</span><span><i style="background:var(--paga)"></i>paga</span></div>
+        ${celulas.map((iso) => renderDia(iso, sel)).join('')}</div>
+      <div class="legenda dica-cal">${Object.values(estados).map(([sigla, rotulo]) => `<span><b>${sigla}</b>: ${rotulo}</span>`).join('')}</div>
     </div>
     <section class="card" aria-live="polite" aria-atomic="false"><h2 style="margin-bottom:6px">Contas de ${curta(sel)}</h2><div class="lista-simples">
       ${lista.map((c) => `<div style="flex-direction:column;gap:4px"><a href="#/conta/${c.id}" style="display:flex;justify-content:space-between;color:inherit;text-decoration:none"><b>${esc(c.descricao)}</b><b>${fmt(c.valor)}</b></a><span>${tag(c)}</span></div>`).join('') || '<p class="small muted" style="padding:8px 0">Nenhuma conta neste dia.</p>'}
@@ -672,7 +675,7 @@ function telaRelatorios() {
     ${doMes.length > 6 ? `<button class="link small nao-imprime" data-acao="todos-rel">${todos ? 'Mostrar menos' : `Ver todos os ${doMes.length} lançamentos →`}</button>` : ''}</div>
     ${lanc.length ? `<table><caption class="sr-only">Lançamentos de ${nomeMes(mes)}</caption><thead><tr><th scope="col">Data</th><th scope="col">Descrição</th><th scope="col" class="esconde-cel">Tipo</th><th scope="col" class="num">Valor</th><th scope="col" class="esconde-cel">Comprovante</th></tr></thead><tbody>
     ${lanc.map((c) => `<tr data-ir="#/conta/${c.id}"><td>${curta(c.venc)}</td><td><a class="linha-link" style="font-weight:500" href="#/conta/${c.id}">${esc(c.descricao)}</a></td><td class="esconde-cel">${c.tipo === 'entrada' ? 'Entrada' : 'Saída'}</td>
-      <td class="num ${c.tipo === 'entrada' ? 'verde' : ''}">${fmt(valorPago(c))}</td><td class="esconde-cel">${c.pagamento?.comprovante || c.anexos.length ? '<span class="arq">PDF</span>' : '<span class="muted" aria-label="sem comprovante">—</span>'}</td></tr>`).join('')}
+      <td class="num ${c.tipo === 'entrada' ? 'verde' : ''}">${fmt(valorPago(c))}</td><td class="esconde-cel">${c.pagamento?.comprovante || c.anexos.length ? '<span class="arq">PDF</span>' : '<span class="muted small">Sem comprovante</span>'}</td></tr>`).join('')}
     </tbody></table>` : '<p class="vazio">Nenhum lançamento neste mês.</p>'}</section>`;
 }
 
@@ -783,7 +786,7 @@ function render() {
     atualizarPrevia();
   }
   if (ui.toast) {
-    raiz.insertAdjacentHTML('beforeend', `<div class="toast"><span>${esc(ui.toast.texto)}</span>${ui.toast.desfazer ? `<button data-acao="desfazer-pagamento" data-id="${ui.toast.desfazer}">Desfazer<span class="sr-only"> ${esc(ui.toast.texto.replace(/ registrado\.$/, ''))}</span></button>` : ''}</div>`);
+    raiz.insertAdjacentHTML('beforeend', `<div class="toast"><span>${esc(ui.toast.texto)}</span>${ui.toast.desfazer ? `<button data-acao="desfazer-pagamento" data-id="${ui.toast.desfazer}">Desfazer<span class="sr-only"> ${esc(ui.toast.texto.replace(/ registrado\.$/, ''))}</span></button><button data-acao="dispensar-aviso">Fechar aviso</button>` : ''}</div>`);
   }
   ligarErros(raiz);
   const pedido = ui.focar; ui.focar = null;
@@ -848,6 +851,7 @@ document.addEventListener('click', async (ev) => {
       if (ui.modal) ui.focar = ui.modalOrigem;
       salvar(); ui.modal = null; toast(c.agendada ? `“${c.descricao}” marcada como agendada.` : 'Agendamento desmarcado.'); break;
     }
+    case 'dispensar-aviso': ui.toast = null; ui.focar = 'main h1'; break;
     case 'desfazer-pagamento': desfazerPagamento(id); return;
     case 'excluir': {
       const c = conta(id);
@@ -964,7 +968,17 @@ document.addEventListener('input', (ev) => {
     ui.lista.q = el.value; ui.lista.pagina = 1; render();
     clearTimeout(timerBusca); timerBusca = setTimeout(() => anunciar(avisoLista()), 800); // espera parar de digitar
   }
-  else if (el.closest('#form-conta')) atualizarPrevia();
+  else if (el.closest('#form-conta')) {
+    const resolvido = { descricao: () => el.value.trim(), valor: () => parseValor(el.value) > 0, venc: () => el.value }[el.name];
+    if (ui.erros[el.name] && resolvido?.()) {
+      delete ui.erros[el.name];
+      el.removeAttribute('aria-invalid');
+      el.removeAttribute('aria-describedby');
+      el.closest('.campo').classList.remove('erro');
+      el.closest('.campo').querySelector('.msg-erro')?.remove();
+    }
+    atualizarPrevia();
+  }
 });
 
 document.addEventListener('keydown', (ev) => {
@@ -1000,8 +1014,9 @@ document.addEventListener('keydown', (ev) => {
 });
 
 document.addEventListener('submit', (ev) => {
-  ev.preventDefault();
   const form = ev.target;
+  if (form.method === 'dialog') return;
+  ev.preventDefault();
   if (form.id === 'form-login') {
     const email = form.email.value.trim().toLowerCase();
     const u = db.usuarios.find((x) => x.email.toLowerCase() === email);
