@@ -285,3 +285,12 @@ fieldset { border: 0; min-width: 0; }
 legend { padding: 0; }
 .migalha a { text-decoration: underline; }
 .modal-dialogo { width: 100%; max-width: 560px; }
+
+dialog.modal:not([open]) { display: none; }
+dialog.modal {
+  margin: auto;
+  width: calc(100% - 32px);
+  border: 1px solid var(--borda);
+  color: var(--texto);
+}
+dialog.modal::backdrop { background: rgba(15, 23, 32, .5); }

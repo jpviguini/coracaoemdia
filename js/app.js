@@ -310,6 +310,28 @@ function anexoCampo(nome, rotulo, arquivo) {
     ${arquivo ? `<div class="arquivo small" style="grid-column:1/-1" aria-hidden="true">${esc(arquivo)}</div>` : ''}</div>`;
 }
 
+function proximasDaSerie(c) {
+  return c.serie ? db.contas.filter((x) => x.serie === c.serie && x.indiceSerie > c.indiceSerie && !x.pagamento) : [];
+}
+
+function escolhaDeEscopo(acao, opcoes) {
+  const dialogo = document.createElement('dialog');
+  dialogo.className = 'modal';
+  dialogo.setAttribute('aria-labelledby', 'escopo-titulo');
+  dialogo.innerHTML = '<form method="dialog" class="form"><h2 id="escopo-titulo">' + esc(acao) +
+    '</h2><div class="acoes"><button class="btn" value="cancelar" autofocus>Cancelar</button>' +
+    opcoes.map(([valor, rotulo]) => '<button class="btn" value="' + valor + '">' + rotulo + '</button>').join('') + '</div></form>';
+  document.body.append(dialogo);
+  return new Promise((resolve) => {
+    dialogo.addEventListener('close', () => {
+      const escolha = dialogo.returnValue;
+      dialogo.remove();
+      resolve(escolha);
+    }, { once: true });
+    dialogo.showModal();
+  });
+}
+
 function telaForm(r) {
   const editando = r.nome === 'editar' ? conta(r.id) : null;
   if (r.nome === 'editar' && !editando) return naoEncontrada();
@@ -325,8 +347,8 @@ function telaForm(r) {
   <form id="form-conta" class="form" novalidate data-id="${editando ? c.id : ''}">
     <input type="hidden" name="tipo" value="${tipo}">
     <div class="seg" role="group" aria-label="Tipo de lançamento" style="align-self:flex-start">
-      <button type="button" class="${tipo === 'saida' ? 'on' : ''}" aria-pressed="${tipo === 'saida'}" data-acao="tipo-form" data-tipo="saida">Saída (conta a pagar)</button>
-      <button type="button" class="${tipo === 'entrada' ? 'on' : ''}" aria-pressed="${tipo === 'entrada'}" data-acao="tipo-form" data-tipo="entrada">Entrada</button></div>
+      <button type="button" class="${tipo === 'saida' ? 'on' : ''}" aria-pressed="${tipo === 'saida'}" data-acao="tipo-form" data-tipo="saida" ${c.pagamento ? 'disabled' : ''}>Saída (conta a pagar)</button>
+      <button type="button" class="${tipo === 'entrada' ? 'on' : ''}" aria-pressed="${tipo === 'entrada'}" data-acao="tipo-form" data-tipo="entrada" ${c.pagamento ? 'disabled' : ''}>Entrada</button></div>
     <div class="duas larga-400">
       <div class="form">
         ${campo('descricao', 'Descrição *', `<input id="f-descricao" name="descricao" type="text" required autocomplete="off" placeholder="Ex.: Conta de energia" value="${v('descricao')}">`)}
@@ -338,9 +360,9 @@ function telaForm(r) {
           ${campo('categoria', 'Categoria', `<select id="f-categoria" name="categoria"><option value="">Selecione…</option>${categoriasAtivas().map((x) => `<option ${v('categoria') === esc(x) ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select>`)}
           ${campo('fornecedor', tipo === 'entrada' ? 'Origem' : 'Fornecedor', `<input id="f-fornecedor" name="fornecedor" type="text" list="fornecedores" value="${v('fornecedor')}"><datalist id="fornecedores">${fornecedores.map((x) => `<option value="${esc(x)}">`).join('')}</datalist>`)}
         </div>
-        <fieldset class="campo"><legend class="rotulo">Repetir</legend><div class="opcoes">
+        <fieldset class="campo" ${editando ? 'disabled' : ''}><legend class="rotulo">Repetir</legend><div class="opcoes">
           ${[['nao', 'Não repete'], ['mensal', 'Todo mês'], ['semanal', 'Toda semana'], ['anual', 'Todo ano']].map(([id, nome]) => `<label><input type="radio" name="repetir" value="${id}" ${(e.valores?.repetir || c.repetir) === id ? 'checked' : ''}> ${nome}</label>`).join('')}
-        </div></fieldset>
+        </div><p class="small muted">${editando ? 'A frequência é definida no cadastro da série.' : 'Ao repetir, o protótipo cria somente 3 ocorrências futuras além desta.'}</p></fieldset>
         ${campo('obs', 'Observações', `<textarea id="f-obs" name="obs" placeholder="Opcional">${v('obs')}</textarea>`)}
         <p class="small muted"><span aria-hidden="true">*</span> campos obrigatórios</p>
       </div>
@@ -351,7 +373,7 @@ function telaForm(r) {
         <div class="previa" id="previa" aria-live="polite" aria-atomic="true"></div>
       </div>
     </div>
-    <div class="acoes"><a class="btn" href="${editando ? '#/conta/' + c.id : '#/contas'}">Cancelar</a><button class="btn pri">${editando ? 'Salvar alterações' : 'Salvar conta'}</button></div>
+    <div class="acoes"><a class="btn" href="${editando ? '#/conta/' + c.id : '#/contas'}" data-acao="cancelar-conta">Cancelar</a><button class="btn pri">${editando ? 'Salvar alterações' : 'Salvar conta'}</button></div>
   </form>`;
 }
 
@@ -360,7 +382,7 @@ function lerForm(form) {
   const arquivo = ['anexo', 'anexo-foto', 'anexo-cel'].map((n) => d.get(n)).find((f) => f && f.name);
   return {
     tipo: d.get('tipo'), descricao: d.get('descricao').trim(), valor: d.get('valor'), venc: d.get('venc'), categoria: d.get('categoria'),
-    fornecedor: d.get('fornecedor').trim(), repetir: d.get('repetir') || 'nao', obs: d.get('obs').trim(),
+    fornecedor: d.get('fornecedor').trim(), repetir: d.get('repetir') || conta(form.dataset.id)?.repetir || 'nao', obs: d.get('obs').trim(),
     lembretes: d.getAll('lembretes').map(Number), anexo: arquivo ? arquivo.name : ui.erros.valores?.anexo,
   };
 }
@@ -370,19 +392,20 @@ function atualizarPrevia() {
   if (!form || !alvo) return;
   const v = lerForm(form);
   if (!v.venc) { const vazio = '<span class="small muted">Como esta conta vai aparecer</span><span class="small">Preencha o vencimento para ver o estado.</span>'; if (alvo.dataset.html !== vazio) { alvo.innerHTML = vazio; alvo.dataset.html = vazio; } return; }
-  const c = { tipo: v.tipo, venc: v.venc, pagamento: null, agendada: false };
+  const existente = conta(form.dataset.id);
+  const c = { ...existente, tipo: v.tipo, venc: v.venc };
   const e = estado(c);
   const prox = proximasOcorrencias(v.venc, v.repetir);
   const nomes = { 3: '3 dias antes', 1: '1 dia antes', 0: 'no dia', 7: '1 semana antes' };
   const html = `<span class="small muted">Como esta conta vai aparecer</span>
-    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span class="tag ${e}">${ROTULO[e]}</span><b>${e === 'vencida' ? 'venceu ' + prazo(c) : e === 'prevista' ? 'prevista para ' + dataBR(v.venc) : 'vence ' + prazo(c)}</b></div>
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span class="tag ${e}">${ROTULO[e]}</span><b>${c.pagamento ? 'em ' + dataBR(c.pagamento.data) : e === 'vencida' ? 'venceu ' + prazo(c) : e === 'prevista' ? 'prevista para ' + dataBR(v.venc) : 'vence ' + prazo(c)}</b></div>
     ${v.tipo === 'saida' ? `<span class="small muted">Lembretes: ${v.lembretes.length ? v.lembretes.sort((a, b) => b - a).map((d) => nomes[d]).join(', ') : 'nenhum'}</span>` : ''}
     ${prox.length ? `<span class="small muted">Próximas: ${prox.map(dataBR).join(', ')}</span>` : ''}
     <span class="small muted">O estado é calculado pelo sistema a partir da data.</span>`;
   if (alvo.dataset.html !== html) { alvo.innerHTML = html; alvo.dataset.html = html; }
 }
 
-function salvarConta(form) {
+async function salvarConta(form) {
   const v = lerForm(form);
   const erros = {};
   if (!v.descricao) erros.descricao = 'Informe a descrição.';
@@ -395,7 +418,20 @@ function salvarConta(form) {
   const id = form.dataset.id;
   if (id) {
     const c = conta(id);
-    Object.assign(c, { tipo: v.tipo, descricao: v.descricao, valor: centavos, venc: v.venc, categoria: v.categoria || 'Outros', fornecedor: v.fornecedor, repetir: v.repetir, obs: v.obs, lembretes: v.lembretes });
+    const proximas = proximasDaSerie(c);
+    const escopo = proximas.length ? await escolhaDeEscopo('Aplicar as alterações a quais ocorrências?', [
+      ['unica', 'Só esta'], ['serie', 'Esta e as próximas em aberto']
+    ]) : 'unica';
+    if (escopo !== 'unica' && escopo !== 'serie') return;
+    const campos = { tipo: v.tipo, descricao: v.descricao, valor: centavos, categoria: v.categoria || 'Outros', fornecedor: v.fornecedor, obs: v.obs, lembretes: v.lembretes };
+    if (escopo === 'serie') {
+      for (const futura of proximas) {
+        const posicao = futura.indiceSerie - c.indiceSerie;
+        Object.assign(futura, campos, { venc: v.venc === c.venc ? futura.venc : proximasOcorrencias(v.venc, c.repetir, posicao).at(-1) });
+        futura.historico.push({ quando: agora(), texto: quem + ' editou a série de contas' });
+      }
+    }
+    Object.assign(c, campos, { venc: v.venc });
     if (v.anexo && !c.anexos.includes(v.anexo)) c.anexos.push(v.anexo);
     c.historico.push({ quando: agora(), texto: `${quem} editou a conta` });
     salvar(); toast('Alterações salvas.'); ir('#/conta/' + id); return;
@@ -408,7 +444,11 @@ function salvarConta(form) {
   const c = novo(v.venc, `${quem} cadastrou a conta`);
   if (v.anexo) c.historico.push({ quando: agora(), texto: `${quem} anexou ${v.anexo}` });
   db.contas.push(c);
-  proximasOcorrencias(v.venc, v.repetir).forEach((d) => db.contas.push(novo(d, 'Conta gerada (recorrente)')));
+  const datas = proximasOcorrencias(v.venc, v.repetir);
+  if (datas.length) {
+    Object.assign(c, { serie: c.id, indiceSerie: 0 });
+    datas.forEach((d, i) => db.contas.push({ ...novo(d, 'Conta gerada (recorrente)'), serie: c.id, indiceSerie: i + 1 }));
+  }
   salvar();
   toast(`“${v.descricao}” cadastrada${v.repetir !== 'nao' ? ' com as próximas ocorrências' : ''}.`);
   ir('#/conta/' + c.id);
@@ -674,9 +714,9 @@ function telaConfig(r) {
       </div></div>
       <div class="acoes" style="margin-top:20px"><button class="btn pri" data-acao="salvar-config">Salvar alterações</button></div>`;
   } else if (aba === 'usuarios') {
-    corpo = `<section class="card tabela"><table><caption class="sr-only">Usuários com acesso</caption><thead><tr><th scope="col">Nome</th><th scope="col" class="esconde-cel">E-mail</th><th scope="col">Perfil</th></tr></thead><tbody>
-      ${db.usuarios.map((u) => `<tr style="cursor:default"><td><b>${esc(u.nome)}</b>${u.id === usuarioId ? ' <span class="small muted">(você)</span>' : ''}</td><td class="esconde-cel">${esc(u.email)}</td>
-        <td><select data-acao="perfil" data-id="${u.id}" style="width:170px" aria-label="Perfil de ${esc(u.nome)}">${['Financeiro', 'Apoio', 'Diretoria'].map((p) => `<option ${u.perfil === p ? 'selected' : ''}>${p}</option>`).join('')}</select></td></tr>`).join('')}
+    corpo = `<section class="card tabela"><table><caption class="sr-only">Usuários e convites</caption><thead><tr><th scope="col">Nome</th><th scope="col" class="esconde-cel">E-mail</th><th scope="col">Perfil</th><th scope="col">Ações</th></tr></thead><tbody>
+      ${db.usuarios.map((u) => `<tr style="cursor:default"><td><b>${esc(u.nome)}</b>${u.id === usuarioId ? ' <span class="small muted">(você)</span>' : ''}${u.pendente ? '<div class="small muted">Convite pendente</div>' : ''}</td><td class="esconde-cel">${esc(u.email)}</td>
+        <td><select data-acao="perfil" data-id="${u.id}" style="width:170px" aria-label="Perfil de ${esc(u.nome)}">${['Financeiro', 'Apoio', 'Diretoria'].map((p) => `<option ${u.perfil === p ? 'selected' : ''}>${p}</option>`).join('')}</select></td><td>${u.id !== usuarioId ? '<button class="link small" data-acao="remover-acesso" data-id="' + esc(u.id) + '">' + (u.pendente ? 'Cancelar convite' : 'Remover acesso') + '<span class="sr-only"> de ' + esc(u.nome) + '</span></button>' : ''}</td></tr>`).join('')}
       </tbody></table></section>
       <p class="small muted" style="margin:10px 0 20px">Financeiro: todas as funções · Apoio: cadastra contas, anexa documentos e consulta · Diretoria: consulta e exporta relatórios.</p>
       <form id="form-convite" class="card form" novalidate><h2>Convidar usuário</h2>
@@ -758,7 +798,7 @@ function render() {
 // ---------------------------------------------------------------- eventos
 function mudarMes(ym, delta) { return addMeses(ym + '-01', delta).slice(0, 7); }
 
-document.addEventListener('click', (ev) => {
+document.addEventListener('click', async (ev) => {
   const alvo = ev.target.closest('[data-acao]');
   const linha = ev.target.closest('tr[data-ir]');
   if (!alvo) {
@@ -811,12 +851,35 @@ document.addEventListener('click', (ev) => {
     case 'desfazer-pagamento': desfazerPagamento(id); return;
     case 'excluir': {
       const c = conta(id);
-      if (!confirm(`Excluir “${c.descricao}” (${fmt(c.valor)}, ${dataBR(c.venc)})? Essa ação não pode ser desfeita.`)) return;
-      db.contas = db.contas.filter((x) => x.id !== id); salvar(); toast('Conta excluída.');
+      const proximas = proximasDaSerie(c);
+      const opcoes = [['unica', 'Excluir só esta']];
+      if (proximas.length) opcoes.push(['serie', 'Excluir esta e as próximas em aberto']);
+      const escopo = await escolhaDeEscopo('Excluir ' + c.descricao + '?', opcoes);
+      if (escopo !== 'unica' && escopo !== 'serie') return;
+      const ids = new Set([id, ...(escopo === 'serie' ? proximas.map((x) => x.id) : [])]);
+      db.contas = db.contas.filter((x) => !ids.has(x.id));
+      salvar(); toast(ids.size === 1 ? 'Conta excluída.' : ids.size + ' contas excluídas.');
       if (rota().nome === 'conta') { ir('#/contas'); return; }
       break;
     }
     case 'abrir-anexo': toast(`No protótipo os arquivos não são guardados de verdade (${alvo.dataset.nome}).`); break;
+    case 'cancelar-conta': {
+      const v = lerForm($('#form-conta'));
+      const preenchido = v.descricao || v.valor || v.obs || v.fornecedor || v.anexo;
+      if (preenchido && !confirm('Descartar as informações do formulário?')) return;
+      ir(alvo.getAttribute('href')); return;
+    }
+    case 'remover-acesso': {
+      const u = db.usuarios.find((x) => x.id === id);
+      if (!u || u.id === usuarioId) return;
+      if (!u.pendente && u.perfil === 'Financeiro' && !db.usuarios.some((x) => x.id !== id && !x.pendente && x.perfil === 'Financeiro')) {
+        toast('Mantenha ao menos um usuário com perfil Financeiro.'); break;
+      }
+      if (!confirm((u.pendente ? 'Cancelar o convite de ' : 'Remover o acesso de ') + u.nome + '?')) return;
+      db.usuarios = db.usuarios.filter((x) => x.id !== id);
+      ui.rascunhoConfig = null;
+      salvar(); toast(u.pendente ? 'Convite cancelado.' : 'Acesso removido.'); break;
+    }
     case 'tipo-form': {
       const form = $('#form-conta');
       ui.erros = { ...ui.erros, valores: { ...lerForm(form), tipo: alvo.dataset.tipo } }; break;
@@ -866,6 +929,12 @@ document.addEventListener('change', (ev) => {
   else if (el.dataset.acao === 'pref-contraste') { pref.contraste = el.checked; salvarPreferencias(); anunciar(el.checked ? 'Alto contraste ligado.' : 'Alto contraste desligado.'); }
   else if (el.dataset.acao === 'perfil') {
     const u = db.usuarios.find((x) => x.id === el.dataset.id);
+    if (u.perfil === 'Financeiro' && !u.pendente && el.value !== 'Financeiro' &&
+        !db.usuarios.some((x) => x.id !== u.id && !x.pendente && x.perfil === 'Financeiro')) {
+      el.value = u.perfil; toast('Mantenha ao menos um usuário com perfil Financeiro.'); render(); return;
+    }
+    if (u.perfil === el.value) return;
+    if (!confirm('Alterar o perfil de ' + u.nome + ' para ' + el.value + '?')) { el.value = u.perfil; return; }
     u.perfil = el.value; salvar(); toast(`Perfil de ${u.nome.split(' ')[0]} alterado para ${el.value}.`); render();
   } else if (el.id === 'add-anexo' && el.files[0]) {
     const c = conta(el.dataset.id);
@@ -936,6 +1005,7 @@ document.addEventListener('submit', (ev) => {
   if (form.id === 'form-login') {
     const email = form.email.value.trim().toLowerCase();
     const u = db.usuarios.find((x) => x.email.toLowerCase() === email);
+    if (u?.pendente && form.senha.value) { u.pendente = false; salvar(); }
     ui.erros = {};
     if (!email) ui.erros.email = 'Informe seu e-mail.';
     else if (!u) ui.erros.email = 'E-mail não encontrado. O acesso é criado por convite da responsável financeira.';
@@ -956,7 +1026,7 @@ document.addEventListener('submit', (ev) => {
     if (!nome || !/^\S+@\S+\.\S+$/.test(email)) { ui.erros = { convite: 'Informe nome e um e-mail válido.' }; ui.focar = nome ? '#c-email' : '#c-nome'; render(); return; }
     if (db.usuarios.some((u) => u.email.toLowerCase() === email.toLowerCase())) { ui.erros = { convite: 'Esse e-mail já tem acesso.' }; ui.focar = '#c-email'; render(); return; }
     ui.erros = {};
-    db.usuarios.push({ id: 'u' + Date.now().toString(36), nome, email, perfil: form.perfil.value, lembretes: false });
+    db.usuarios.push({ id: 'u' + Date.now().toString(36), nome, email, perfil: form.perfil.value, lembretes: false, pendente: true });
     salvar(); toast(`Convite enviado para ${email}.`); render();
   } else if (form.id === 'form-categoria') {
     const nome = form.nome.value.trim();
