@@ -1,4 +1,4 @@
-import { HOJE, diasEntre, addMeses, estado, URGENCIA, prazo, parseValor, fmt, valorPago, resumoMes, resumoRealizado, proximasOcorrencias } from './logic.js';
+import { dataLocal, diasEntre, addMeses, estado, URGENCIA, prazo, parseValor, fmt, valorPago, resumoMes, resumoRealizado, proximasOcorrencias } from './logic.js';
 import { seed } from './data.js';
 
 // ---------------------------------------------------------------- dados
@@ -37,13 +37,16 @@ const mesDe = (iso) => iso.slice(0, 7);
 const ROTULO = { vencida: 'Vencida', hoje: 'Vence hoje', avencer: 'A vencer', agendada: 'Agendada', paga: 'Paga', prevista: 'Prevista', recebida: 'Recebida' };
 const tag = (c) => { const e = estado(c); return `<span class="tag ${e}">${e === 'paga' ? '✓ ' : ''}${ROTULO[e]}</span>`; };
 const iniciais = (nome) => nome.split(' ').map((p) => p[0]).slice(0, 2).join('');
-const agora = () => `${HOJE}T${new Date().toTimeString().slice(0, 5)}`;
+const agora = () => {
+  const data = new Date();
+  return `${dataLocal(data)}T${data.toTimeString().slice(0, 5)}`;
+};
 const primeiroNome = () => usuario().nome.split(' ')[0];
 const conta = (id) => db.contas.find((c) => c.id === id);
 const saidas = () => db.contas.filter((c) => c.tipo === 'saida');
-const urgentes = () => saidas().filter((c) => !c.pagamento && !c.agendada && diasEntre(HOJE, c.venc) <= 7)
+const urgentes = () => saidas().filter((c) => !c.pagamento && !c.agendada && diasEntre(dataLocal(), c.venc) <= 7)
   .sort((a, b) => URGENCIA[estado(a)] - URGENCIA[estado(b)] || a.venc.localeCompare(b.venc));
-const lembretesAtivos = () => saidas().filter((c) => !c.pagamento && diasEntre(HOJE, c.venc) <= 1)
+const lembretesAtivos = () => saidas().filter((c) => !c.pagamento && diasEntre(dataLocal(), c.venc) <= 1)
   .sort((a, b) => a.venc.localeCompare(b.venc));
 const categoriasAtivas = () => db.categorias.filter((c) => !c.arquivada).map((c) => c.nome);
 
@@ -60,9 +63,9 @@ const icone = (n, t = 20) => `<svg width="${t}" height="${t}" viewBox="0 0 24 24
 
 // ---------------------------------------------------------------- estado da interface
 const ui = {
-  lista: { tipo: 'saida', estado: 'todos', q: '', mes: mesDe(HOJE), cat: '', ordem: 'estado', dir: 1, pagina: 1 },
-  menu: null, notif: false, modal: null, toast: null, calMes: mesDe(HOJE), calDia: HOJE,
-  rel: { mes: mesDe(HOJE), cat: '', modo: 'semana', todos: false }, rascunhoConfig: null, erros: {},
+  lista: { tipo: 'saida', estado: 'todos', q: '', mes: mesDe(dataLocal()), cat: '', ordem: 'estado', dir: 1, pagina: 1 },
+  menu: null, notif: false, modal: null, toast: null, calMes: mesDe(dataLocal()), calDia: dataLocal(),
+  rel: { mes: mesDe(dataLocal()), cat: '', modo: 'semana', todos: false }, rascunhoConfig: null, erros: {},
 };
 let timerToast;
 function iniciarTimerToast() {
@@ -186,16 +189,17 @@ function casca(r, conteudo) {
 }
 
 function telaPainel() {
+  const dataHoje = dataLocal();
   const s = saidas().filter((c) => !c.pagamento);
   const venc = s.filter((c) => estado(c) === 'vencida');
   const hoje = s.filter((c) => estado(c) === 'hoje');
-  const prox = s.filter((c) => estado(c) === 'avencer' && diasEntre(HOJE, c.venc) <= 7);
-  const doMes = saidas().filter((c) => mesDe(c.venc) === mesDe(HOJE));
+  const prox = s.filter((c) => estado(c) === 'avencer' && diasEntre(dataHoje, c.venc) <= 7);
+  const doMes = saidas().filter((c) => mesDe(c.venc) === mesDe(dataHoje));
   const faltaPagar = doMes.filter((c) => !c.pagamento);
   const soma = (l) => l.reduce((t, c) => t + c.valor, 0);
-  const r = resumoMes(db.contas, mesDe(HOJE));
-  const realizado = resumoRealizado(db.contas, mesDe(HOJE));
-  const pagas = saidas().filter((c) => c.pagamento && mesDe(c.venc) === mesDe(HOJE)).sort((a, b) => b.pagamento.data.localeCompare(a.pagamento.data)).slice(0, 3);
+  const r = resumoMes(db.contas, mesDe(dataHoje));
+  const realizado = resumoRealizado(db.contas, mesDe(dataHoje));
+  const pagas = saidas().filter((c) => c.pagamento && mesDe(c.venc) === mesDe(dataHoje)).sort((a, b) => b.pagamento.data.localeCompare(a.pagamento.data)).slice(0, 3);
   const lista = urgentes();
   const hora = new Date().getHours();
   const cumprimento = hora < 12 ? 'Bom dia' : hora < 18 ? 'Boa tarde' : 'Boa noite';
@@ -203,7 +207,7 @@ function telaPainel() {
     <span class="rot">${rot}</span><span class="n">${l.length}</span><span class="muted">${extra || fmt(soma(l))}</span></button>`;
   return `
   <div class="cab"><div><h1 class="titulo">${cumprimento}, ${esc(primeiroNome())}!</h1>
-    <p class="muted">Hoje é ${diaSemana(HOJE)}, ${+HOJE.slice(8)} de ${MESES[+HOJE.slice(5, 7) - 1].toLowerCase()}. Aqui está o resumo das suas contas.</p></div>
+    <p class="muted">Hoje é ${diaSemana(dataHoje)}, ${+dataHoje.slice(8)} de ${MESES[+dataHoje.slice(5, 7) - 1].toLowerCase()}. Aqui está o resumo das suas contas.</p></div>
     <a class="btn pri novo" href="#/nova">+ Nova conta</a></div>
   <div class="grid-4">
     ${cartao('vencida', 'Vencidas', venc, 'vencida')}
@@ -221,7 +225,7 @@ function telaPainel() {
       : '<p class="vazio">Nada urgente. Todas as contas dos próximos 7 dias estão pagas ou agendadas.</p>'}
     </section>
     <div class="pilha">
-      <section class="card"><h2 style="margin-bottom:8px">Resumo de ${MESES[+HOJE.slice(5, 7) - 1].toLowerCase()}</h2>
+      <section class="card"><h2 style="margin-bottom:8px">Resumo de ${MESES[+dataHoje.slice(5, 7) - 1].toLowerCase()}</h2>
         <div class="kv"><span>Entradas previstas</span><b class="verde">${fmt(r.entradas)}</b></div>
         <div class="kv"><span>Saídas previstas</span><b class="vermelho">${fmt(r.saidas)}</b></div>
         <div class="kv"><b>Saldo previsto</b><b class="azul" style="font-size:19px">${fmt(r.saldo)}</b></div>
@@ -502,7 +506,7 @@ function modalPagamento() {
     <div class="cab"><h2 id="t-pag" style="font-size:21px;color:var(--azul)">${entrada ? 'Registrar recebimento' : 'Registrar pagamento'}</h2><button type="button" class="fechar" data-acao="fechar-modal" aria-label="Fechar janela"><span aria-hidden="true">×</span></button></div>
     <div class="resumo-conta" id="d-pag"><span>${esc(c.descricao)} · ${entrada ? 'prev.' : 'venc.'} ${dataBR(c.venc)}</span><b>${fmt(c.valor)}</b></div>
     <div class="linha">
-      <div class="campo ${m.erroData ? 'erro' : ''}"><label for="p-data">Data ${entrada ? 'do recebimento' : 'do pagamento'} ${estrela}</label><input id="p-data" name="data" type="date" required value="${m.data ?? HOJE}">${m.erroData ? '<span class="msg-erro">Informe a data.</span>' : ''}</div>
+      <div class="campo ${m.erroData ? 'erro' : ''}"><label for="p-data">Data ${entrada ? 'do recebimento' : 'do pagamento'} ${estrela}</label><input id="p-data" name="data" type="date" required value="${m.data ?? dataLocal()}">${m.erroData ? '<span class="msg-erro">Informe a data.</span>' : ''}</div>
       <div class="campo ${m.erroValor ? 'erro' : ''}"><label for="p-valor">Valor ${entrada ? 'recebido' : 'pago'} ${estrela}</label><input id="p-valor" name="valor" type="text" inputmode="decimal" required ${m.multa ? '' : 'aria-describedby="dica-valor"'} value="${esc(m.valor ?? (c.valor / 100).toLocaleString('pt-BR', { minimumFractionDigits: 2 }))}" ${m.multa ? '' : 'readonly'}>${m.erroValor ? '<span class="msg-erro">Valor inválido.</span>' : ''}${m.multa ? '' : '<span class="sr-only" id="dica-valor">Somente leitura. Marque a opção de multa ou juros para mudar o valor.</span>'}</div>
     </div>
     ${entrada ? '' : `<label class="check"><input type="checkbox" name="multa" data-acao="multa" ${m.multa ? 'checked' : ''}> Houve multa ou juros (ajustar o valor pago)</label>`}
@@ -557,7 +561,7 @@ function telaCalendario() {
   const diasMes = new Date(y, mo, 0).getDate();
   const celulas = [];
   for (let i = 0; i < Math.ceil((inicio + diasMes) / 7) * 7; i++) {
-    const dt = new Date(y, mo - 1, 1 - inicio + i, 12).toISOString().slice(0, 10);
+    const dt = dataLocal(new Date(y, mo - 1, 1 - inicio + i, 12));
     celulas.push(dt);
   }
   const doDia = (iso) => db.contas.filter((c) => c.venc === iso);
@@ -585,7 +589,7 @@ function telaCalendario() {
     const rotulo = [dia, ...itens.map((m) => m.texto)].join(' ');
     const data = dia + ' de ' + MESES[+iso.slice(5, 7) - 1].toLowerCase() + ', ' + diaSemana(iso);
     const resumo = [rotulo, data, ...itens.map((m) => m.descricao)].join(', ');
-    return `<button data-acao="dia" data-dia="${iso}" tabindex="${iso === sel ? 0 : -1}" aria-pressed="${iso === sel}"${iso === HOJE ? ' aria-current="date"' : ''} class="${mesDe(iso) !== ym ? 'fora' : ''} ${iso === sel ? 'sel' : ''} ${iso === HOJE ? 'hoje-dia' : ''}" aria-label="${resumo}">
+    return `<button data-acao="dia" data-dia="${iso}" tabindex="${iso === sel ? 0 : -1}" aria-pressed="${iso === sel}"${iso === dataLocal() ? ' aria-current="date"' : ''} class="${mesDe(iso) !== ym ? 'fora' : ''} ${iso === sel ? 'sel' : ''} ${iso === dataLocal() ? 'hoje-dia' : ''}" aria-label="${resumo}">
       <span class="d" aria-hidden="true">${dia}</span>
       ${itens.map((m) => `<span class="pilula" aria-hidden="true" style="background:var(--${m.cor})">${m.texto}</span>`).join(' ')}</button>`;
   };
@@ -832,10 +836,10 @@ document.addEventListener('click', async (ev) => {
       usuarioId = null; ui.modal = null; location.hash = '#/login'; break;
     case 'notif': ui.notif = !ui.notif; if (ui.notif) ui.focar = lembretesAtivos().length ? '#painel-lembretes .item' : '#painel-lembretes'; break;
     case 'ir': location.hash = alvo.dataset.hash; return;
-    case 'filtrar': Object.assign(f, { tipo: 'saida', estado: alvo.dataset.estado, q: '', cat: '', mes: mesDe(HOJE), pagina: 1, ordem: 'estado', dir: 1 }); ir('#/contas'); return;
+    case 'filtrar': Object.assign(f, { tipo: 'saida', estado: alvo.dataset.estado, q: '', cat: '', mes: mesDe(dataLocal()), pagina: 1, ordem: 'estado', dir: 1 }); ir('#/contas'); return;
     case 'tipo-lista': Object.assign(f, { tipo: alvo.dataset.tipo, estado: 'todos', pagina: 1 }); aviso = avisoLista; break;
     case 'aba-estado': Object.assign(f, { estado: alvo.dataset.estado, pagina: 1 }); aviso = avisoLista; break;
-    case 'mes-atual': f.mes = mesDe(HOJE); f.pagina = 1; aviso = avisoLista; break;
+    case 'mes-atual': f.mes = mesDe(dataLocal()); f.pagina = 1; aviso = avisoLista; break;
     case 'mes-lista': f.mes = mudarMes(f.mes, +alvo.dataset.delta); f.pagina = 1; aviso = () => `${nomeMes(f.mes)}. ${avisoLista()}`; break;
     case 'ordenar': f.dir = f.ordem === alvo.dataset.campo ? -f.dir : 1; f.ordem = alvo.dataset.campo; aviso = () => `Ordenado por ${alvo.textContent.replace(/[↓↑↕]|, ordenar/g, '').trim().toLowerCase()}, ${f.dir > 0 ? 'crescente' : 'decrescente'}.`; break;
     case 'pagina': f.pagina += +alvo.dataset.delta; aviso = () => `Página ${f.pagina}.`; break;
@@ -889,7 +893,7 @@ document.addEventListener('click', async (ev) => {
       ui.erros = { ...ui.erros, valores: { ...lerForm(form), tipo: alvo.dataset.tipo } }; break;
     }
     case 'mes-cal': ui.calMes = mudarMes(ui.calMes, +alvo.dataset.delta); ui.calDia = ui.calMes + '-01'; aviso = () => `Calendário de ${nomeMes(ui.calMes)}.`; break;
-    case 'cal-hoje': ui.calMes = mesDe(HOJE); ui.calDia = HOJE; break;
+    case 'cal-hoje': ui.calMes = mesDe(dataLocal()); ui.calDia = dataLocal(); break;
     case 'dia': ui.calDia = alvo.dataset.dia; ui.calMes = mesDe(ui.calDia); break;
     case 'mes-rel': ui.rel.mes = mudarMes(ui.rel.mes, +alvo.dataset.delta); ui.rel.todos = false; aviso = () => `Relatório de ${nomeMes(ui.rel.mes)}.`; break;
     case 'modo-rel': ui.rel.modo = alvo.dataset.modo; break;
@@ -999,7 +1003,7 @@ document.addEventListener('keydown', (ev) => {
     const passo = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -7, ArrowDown: 7 }[ev.key];
     const meses = { PageUp: -1, PageDown: 1 }[ev.key];
     let novo = null;
-    if (passo) { const d = new Date(ev.target.dataset.dia + 'T12:00:00'); d.setDate(d.getDate() + passo); novo = d.toISOString().slice(0, 10); }
+    if (passo) { const d = new Date(ev.target.dataset.dia + 'T12:00:00'); d.setDate(d.getDate() + passo); novo = dataLocal(d); }
     else if (meses) novo = addMeses(ev.target.dataset.dia, meses);
     else if (ev.key === 'Home') novo = ui.calMes + '-01';
     else if (ev.key === 'End') { const [y, m] = ui.calMes.split('-').map(Number); novo = `${ui.calMes}-${new Date(y, m, 0).getDate()}`; }

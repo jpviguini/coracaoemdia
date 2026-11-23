@@ -30,7 +30,7 @@ Seguindo a WCAG 2.2 (nível AA) e os passos de avaliação de Ferraz (2020):
 
 ## Observações do protótipo
 
-- A data "de hoje" é fixa em 14/09/2026, a mesma do cenário das personas, para os dados de exemplo fazerem sentido.
+- O site usa a data local do navegador. Ao gerar os dados de exemplo, os vencimentos são calculados a partir dessa data.
 - Os dados ficam salvos no navegador de quem usa (localStorage). Em Configurações há um link para restaurar os dados de exemplo.
 - Arquivos anexados não são enviados para lugar nenhum; o protótipo guarda só o nome.
 - Lembretes por e-mail e notificação são simulados (sino no topo da tela).
@@ -43,4 +43,12 @@ Precisa de um servidor simples por causa dos módulos JavaScript:
 python3 -m http.server 8000
 ```
 
-e abra http://localhost:8000. Testes das regras (estado da conta, valores, recorrência): `node --test tests/*.test.mjs`.
+Abra http://localhost:8000 e entre com um dos usuários de exemplo.
+
+1. No **Painel**, clique em **Nova conta**. Preencha descrição, valor e vencimento e salve.
+2. No detalhe da conta, clique em **Registrar pagamento**, escolha a forma de pagamento e confirme.
+3. Recarregue a página para conferir o estado **Paga** e o registro no histórico.
+
+O cadastro e o pagamento ficam no armazenamento local do navegador. Para reencontrá-los, use o mesmo navegador, perfil e endereço (incluindo a porta). Use um vencimento no mês atual para testar os filtros desse mês.
+
+Testes das regras (estado da conta, valores, recorrência): `node --test tests/*.test.mjs`.

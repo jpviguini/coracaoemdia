@@ -1,21 +1,29 @@
 // Regras do sistema que não dependem da tela (testadas em tests/logic.test.mjs).
 
-// shortcut: data fixa do cenário DEPOIS (segunda, 14/09/2026) para os dados de exemplo fazerem sentido; trocar por new Date() quando houver dados reais.
-export const HOJE = '2026-09-14';
+export function dataLocal(data = new Date()) {
+  const ano = data.getFullYear();
+  const mes = String(data.getMonth() + 1).padStart(2, '0');
+  const dia = String(data.getDate()).padStart(2, '0');
+  return `${ano}-${mes}-${dia}`;
+}
 
 export const DIA = 86400000;
 const toDate = (iso) => new Date(iso + 'T12:00:00');
 export const diasEntre = (de, ate) => Math.round((toDate(ate) - toDate(de)) / DIA);
-export const addDias = (iso, n) => new Date(toDate(iso).getTime() + n * DIA).toISOString().slice(0, 10);
+export function addDias(iso, n) {
+  const data = toDate(iso);
+  data.setDate(data.getDate() + n);
+  return dataLocal(data);
+}
 export function addMeses(iso, n) {
   const [y, m, d] = iso.split('-').map(Number);
   const ult = new Date(y, m - 1 + n + 1, 0).getDate(); // evita 31/01 + 1 mês = 03/03
   const dt = new Date(y, m - 1 + n, Math.min(d, ult), 12);
-  return dt.toISOString().slice(0, 10);
+  return dataLocal(dt);
 }
 
 // Estado calculado: o usuário nunca escolhe (RF06/RF07/RF11).
-export function estado(conta, hoje = HOJE) {
+export function estado(conta, hoje = dataLocal()) {
   if (conta.tipo === 'entrada') return conta.pagamento ? 'recebida' : 'prevista';
   if (conta.pagamento) return 'paga';
   if (conta.agendada) return 'agendada';
@@ -27,7 +35,7 @@ export function estado(conta, hoje = HOJE) {
 
 export const URGENCIA = { vencida: 0, hoje: 1, avencer: 2, agendada: 3, paga: 4, prevista: 5, recebida: 6 };
 
-export function prazo(conta, hoje = HOJE) {
+export function prazo(conta, hoje = dataLocal()) {
   const d = diasEntre(hoje, conta.venc);
   if (d === 0) return 'hoje';
   if (d === 1) return 'amanhã';
